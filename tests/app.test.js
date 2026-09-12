@@ -212,6 +212,34 @@ test("pallets are clamped inside the trailer envelope", () => {
   eq(p.userData.pos.x, p.position.x, "userData position not synced");
 });
 
+test("oblong items (very different length vs width) clamp, rotate, and report correctly", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("label").value = "BOARD-1";
+  d.getElementById("L").value = "96";
+  d.getElementById("W").value = "12";
+  d.getElementById("H").value = "8";
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  const t = win.state.trailers[0];
+
+  eq(p.geometry.parameters.width, 96, "long dimension kept as entered");
+  eq(p.geometry.parameters.depth, 12, "narrow dimension kept as entered");
+
+  p.position.set(-500, p.position.y, p.position.z);
+  win.clampToTrailer(p);
+  eq(p.position.x - p.geometry.parameters.width / 2, 0, "long board's front face clamps flush to the nose, not past it");
+
+  p.position.set(99999, p.position.y, p.position.z);
+  win.clampToTrailer(p);
+  eq(p.position.x + p.geometry.parameters.width / 2, t.dims.l, "long board's rear face clamps flush to the tail, not past it");
+
+  win.rotatePallet();
+  eq(p.userData.l, 12, "rotate swaps length to the narrow value");
+  eq(p.userData.w, 96, "rotate swaps width to the long value");
+  eq(p.geometry.parameters.width, 12, "geometry rebuilt to match after rotate");
+});
+
 test("changing trailer dimensions (entered in feet) rebuilds the frame and re-clamps cargo", () => {
   const win = boot();
   win.addPalletFromForm();
