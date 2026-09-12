@@ -2,6 +2,27 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.8.0] - 2026-09-12
+
+### Changed
+
+- The "other end" tapered-dimension field is now three separate Len/Wid/Hgt
+  boxes, matching the layout of the primary dimension row, instead of one
+  width-only field. Any part can now taper in length and/or height too, not
+  just width -- each axis defaults to uniform when left blank. Rotating a
+  tapered item correctly swaps its length/width taper pairing along with
+  length and width themselves.
+
+### Added
+
+- Shelving units can now be **resized and repositioned after creation**.
+  Click a unit (in the 3D view, by dragging it, or in the Trailer Fixtures
+  list) to select it, which loads its size and position into the Shelving
+  panel; adjust Len/Wid/Total hgt or the new "Pos from nose" / "Pos from
+  left wall" fields and click **Update Shelf**. Any cargo assigned to that
+  unit's levels re-snaps to follow the change. Dragging in the 3D view
+  still works too and keeps the form in sync.
+
 ## [2.7.0] - 2026-09-12
 
 ### Added

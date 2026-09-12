@@ -274,6 +274,32 @@ test("leaving the tapered-width field blank keeps a plain uniform box (no behavi
   eq(p.geometry.parameters.depth, 40, "hitbox unaffected");
 });
 
+test("tapering can apply to length and height too, each independently, matching the primary L/W/H layout", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("L").value = "60";
+  d.getElementById("L2").value = "50";
+  d.getElementById("W").value = "40";
+  d.getElementById("H").value = "48";
+  d.getElementById("H2").value = "36";
+  win.addPalletFromForm();
+
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.l2, 50, "length taper stored");
+  eq(p.userData.w2, 40, "width not tapered, defaults to w");
+  eq(p.userData.h2, 36, "height taper stored");
+  eq(p.geometry.parameters.width, 60, "hitbox length uses the larger end");
+  eq(p.geometry.parameters.height, 48, "hitbox height uses the larger end");
+  eq(win.dimsText(p.userData), "60-50 x 40 x 48-36 in", "manifest text shows both sizes per tapered axis only");
+
+  win.selectPallet(p);
+  win.rotatePallet();
+  eq(p.userData.l, 40, "rotate swaps length to the old width");
+  eq(p.userData.w, 60, "rotate swaps width to the old length");
+  eq(p.userData.l2, 40, "the taper pairing (l2/w2) swaps along with l/w");
+  eq(p.userData.w2, 50, "the taper pairing (l2/w2) swaps along with l/w");
+});
+
 test("changing trailer dimensions (entered in feet) rebuilds the frame and re-clamps cargo", () => {
   const win = boot();
   win.addPalletFromForm();
@@ -513,6 +539,56 @@ test("dragging a shelving unit brings its assigned cargo along", () => {
   eq(shelf.pos.x, originalShelfX + 100, "moving the unit updates its recorded position");
   eq(p.position.x, shelf.pos.x, "assigned cargo re-snaps to the unit's new position");
   assert(p.position.x !== originalCargoX, "cargo actually moved, not left behind");
+});
+
+test("clicking/dragging a shelving unit selects it and loads its size/position into the form", () => {
+  const win = boot();
+  const d = win.document;
+  win.addShelvesFromForm();
+  eq(d.getElementById("btnUpdateShelf").style.display, "none", "update button hidden with nothing selected");
+
+  const shelf = win.state.trailers[0].fixtures[0];
+  win.selectFixture(shelf);
+  eq(win.state.selectedFixture, shelf, "fixture recorded as selected");
+  eq(d.getElementById("btnUpdateShelf").style.display, "", "update button shown once selected");
+  eq(d.getElementById("shelfL").value, String(shelf.l), "form loaded with the unit's length");
+  eq(d.getElementById("shelfStart").disabled, true, "Start #/Levels are display-only while editing a unit");
+
+  win.deselectFixture();
+  eq(win.state.selectedFixture, null, "selection cleared");
+  eq(d.getElementById("btnUpdateShelf").style.display, "none", "update button hidden again");
+  eq(d.getElementById("shelfStart").disabled, false, "Start #/Levels editable again");
+});
+
+test("Update Shelf resizes and repositions an existing unit, and its assigned cargo follows", () => {
+  const win = boot();
+  const d = win.document;
+  win.addShelvesFromForm();
+  const shelf = win.state.trailers[0].fixtures[0];
+
+  d.getElementById("L").value = "10";
+  d.getElementById("W").value = "10";
+  d.getElementById("H").value = "10";
+  d.getElementById("cargoShelfId").value = shelf.levels[0];
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+
+  win.selectFixture(shelf);
+  d.getElementById("shelfL").value = "60";
+  d.getElementById("shelfW").value = "24";
+  d.getElementById("shelfH").value = "80";
+  d.getElementById("shelfPosX").value = "300";
+  d.getElementById("shelfPosZ").value = "40";
+  win.updateSelectedShelf();
+
+  const updated = win.state.trailers[0].fixtures[0];
+  eq(updated.l, 60, "length updated");
+  eq(updated.w, 24, "width updated");
+  eq(updated.totalH, 80, "height updated");
+  eq(updated.pos.x, 300, "repositioned along the trailer length");
+  eq(updated.pos.z, 40, "repositioned across the trailer width");
+  eq(p.position.x, updated.pos.x, "assigned cargo follows the resized/repositioned unit");
+  eq(win.state.selectedFixture, updated, "unit stays selected after updating");
 });
 
 test("removing a shelving unit clears the assignment on cargo that referenced it", () => {
