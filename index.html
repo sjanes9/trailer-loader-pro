@@ -178,7 +178,14 @@
     <select id="itemType">
       <option value="pallet">Pallet</option>
       <option value="tote">Tote</option>
+      <option value="box">Box</option>
+      <option value="piece">Individual Piece</option>
+      <option value="custom">Custom</option>
     </select>
+    <label id="partCountLabel" style="display:none">Part count (qty in box)</label>
+    <input type="number" id="partCount" value="1" min="1" step="1" style="display:none">
+    <label id="customTypeLabel" style="display:none">Custom type name</label>
+    <input type="text" id="customType" placeholder="e.g. Crate, Drum, Roll" style="display:none">
     <label>Place on shelf</label>
     <select id="cargoShelfId">
       <option value="">None (floor)</option>
@@ -267,7 +274,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.5.0";
+var APP_VERSION = "2.6.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -433,6 +440,8 @@ function wireUI() {
   $("btnDelTrailer").onclick = removeTrailer;
 
   $("btnAddShelves").onclick = addShelvesFromForm;
+
+  $("itemType").onchange = onItemTypeChange;
 
   $("btnTakePhoto").onclick = function () { $("palletImgCapture").click(); };
   $("btnChoosePhoto").onclick = function () { $("palletImg").click(); };
@@ -925,7 +934,7 @@ function makeLabelMaterial(text, bgColor) {
   return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
-var ITEM_TYPES = { pallet: "Pallet", tote: "Tote" };
+var ITEM_TYPES = { pallet: "Pallet", tote: "Tote", box: "Box", piece: "Individual Piece", custom: "Custom" };
 
 function normalizePallet(d) {
   d = d || {};
@@ -934,6 +943,8 @@ function normalizePallet(d) {
     label: String(d.label == null ? "P" : d.label),
     itemType: ITEM_TYPES.hasOwnProperty(d.itemType) ? d.itemType : "pallet",
     shelfId: String(d.shelfId || ""),
+    partCount: Math.max(1, Math.round(num(d.partCount, 1))),
+    customType: String(d.customType || ""),
     l: num(d.l, 48), w: num(d.w, 40), h: num(d.h, 48),
     weight: num(d.weight, 0), value: num(d.value, 0),
     notes: String(d.notes || ""),
@@ -941,6 +952,25 @@ function normalizePallet(d) {
     color: typeof d.color === "string" && d.color ? d.color : randomColor(),
     pos: { x: num(pos.x, 24), y: num(pos.y, 24), z: num(pos.z, 20) }
   };
+}
+
+/* "Box" shows a part-count field, "Custom" shows a free-text type-name
+   field; every other type keeps both hidden. */
+function onItemTypeChange() {
+  var type = $("itemType").value;
+  var isBox = type === "box";
+  var isCustom = type === "custom";
+  $("partCountLabel").style.display = isBox ? "" : "none";
+  $("partCount").style.display = isBox ? "" : "none";
+  $("customTypeLabel").style.display = isCustom ? "" : "none";
+  $("customType").style.display = isCustom ? "" : "none";
+}
+
+function itemTypeLabel(d) {
+  if (d.itemType === "custom") return d.customType || "Custom";
+  var label = ITEM_TYPES[d.itemType] || "Pallet";
+  if (d.itemType === "box" && d.partCount > 1) label += " (qty " + d.partCount + ")";
+  return label;
 }
 
 /* Decorative child meshes only -- the parent box stays the single hitbox
@@ -1015,6 +1045,8 @@ function addPalletFromForm() {
     label: $("label").value || "P",
     itemType: $("itemType").value,
     shelfId: $("cargoShelfId").value,
+    partCount: num($("partCount").value, 1),
+    customType: $("customType").value,
     l: num($("L").value, 48), w: num($("W").value, 40), h: num($("H").value, 48),
     weight: num($("Weight").value, 0), value: num($("Value").value, 0),
     notes: $("Notes").value,
@@ -1091,6 +1123,8 @@ function updatePallet() {
   d.label = $("label").value;
   d.itemType = $("itemType").value;
   d.shelfId = newShelfId;
+  d.partCount = num($("partCount").value, 1);
+  d.customType = $("customType").value;
   d.weight = num($("Weight").value, 0);
   d.value = num($("Value").value, 0);
   d.notes = $("Notes").value;
@@ -1197,6 +1231,9 @@ function fillSidebarForm(d) {
   $("label").value = d.label;
   $("itemType").value = d.itemType || "pallet";
   $("cargoShelfId").value = d.shelfId || "";
+  $("partCount").value = d.partCount || 1;
+  $("customType").value = d.customType || "";
+  onItemTypeChange();
   $("L").value = d.l; $("W").value = d.w; $("H").value = d.h;
   $("Weight").value = d.weight;
   $("Value").value = d.value;
@@ -1418,7 +1455,7 @@ function updateManifest() {
     var title = document.createElement("b");
     title.textContent = d.label;
 
-    var typeLabel = ITEM_TYPES[d.itemType] || "Pallet";
+    var typeLabel = itemTypeLabel(d);
     if (d.shelfId) typeLabel += " → Shelf " + d.shelfId;
 
     var meta = document.createElement("div");
@@ -1542,7 +1579,7 @@ function generatePDF() {
   var my = 30;
   t.pallets.forEach(function (p, i) {
     var d = p.userData;
-    var typeTag = ITEM_TYPES[d.itemType] || "Pallet";
+    var typeTag = itemTypeLabel(d);
     if (d.shelfId) typeTag += " on Shelf " + d.shelfId;
     doc.setFontSize(9);
     doc.text((i + 1) + ". " + d.label + " (" + typeTag + ")  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
@@ -1582,6 +1619,7 @@ function serialize() {
           var d = p.userData;
           return {
             label: d.label, itemType: d.itemType, shelfId: d.shelfId,
+            partCount: d.partCount, customType: d.customType,
             l: d.l, w: d.w, h: d.h,
             weight: d.weight, value: d.value, notes: d.notes,
             img: d.img, color: d.color,

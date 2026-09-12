@@ -2,6 +2,16 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.6.0] - 2026-09-12
+
+### Added
+
+- Cargo **Type** dropdown gains three options: **Box** (with a "Part count"
+  field for how many parts/pieces are in it, shown in the manifest as
+  "Box (qty N)"), **Individual Piece** (a plain loose-item type), and
+  **Custom** (a free-text type name that's used directly as the item's
+  type label everywhere -- manifest, PDF -- instead of a fixed name).
+
 ## [2.5.0] - 2026-09-12
 
 ### Added

@@ -297,6 +297,50 @@ test("pickedPhotoFile() prefers a chosen library file over a captured one", () =
   eq(win.pickedPhotoFile().name, "lib.png", "returns the file present on #palletImg");
 });
 
+test("Box type shows a part-count field and reports quantity in the manifest", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("itemType").value = "box";
+  win.onItemTypeChange();
+  eq(d.getElementById("partCount").style.display, "", "part count field shown for Box");
+  eq(d.getElementById("customType").style.display, "none", "custom type field stays hidden for Box");
+
+  d.getElementById("partCount").value = "24";
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.itemType, "box", "item type stored as box");
+  eq(p.userData.partCount, 24, "part count stored");
+  assert(/Box \(qty 24\)/.test(d.getElementById("manifestList").textContent), "manifest shows box qty");
+});
+
+test("Custom type shows a free-text field and uses it as the manifest label", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("itemType").value = "custom";
+  win.onItemTypeChange();
+  eq(d.getElementById("customType").style.display, "", "custom type field shown for Custom");
+  eq(d.getElementById("partCount").style.display, "none", "part count field stays hidden for Custom");
+
+  d.getElementById("customType").value = "Drum";
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.itemType, "custom", "item type stored as custom");
+  eq(p.userData.customType, "Drum", "custom type name stored");
+  eq(win.itemTypeLabel(p.userData), "Drum", "itemTypeLabel uses the custom name");
+  assert(d.getElementById("manifestList").textContent.includes("Drum"), "manifest shows the custom type name");
+});
+
+test("Individual Piece is a plain type with no extra fields", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("itemType").value = "piece";
+  win.onItemTypeChange();
+  eq(d.getElementById("partCount").style.display, "none", "part count hidden for Individual Piece");
+  eq(d.getElementById("customType").style.display, "none", "custom type hidden for Individual Piece");
+  win.addPalletFromForm();
+  eq(win.state.trailers[0].pallets[0].userData.itemType, "piece", "item type stored as piece");
+});
+
 test("v1 layout files migrate instead of failing to open", () => {
   const win = boot();
   const legacy = { s: { ref: "OLD-1" }, t: [{ d: { l: 636, w: 102, h: 110 }, p: [{ label: "A", l: 48, w: 40, h: 48, weight: "900", value: "100", pos: { x: 30, y: 24, z: 20 } }] }] };
