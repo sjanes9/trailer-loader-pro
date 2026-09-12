@@ -2,6 +2,18 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.2.0] - 2026-09-12
+
+### Added
+
+- Cargo items now have a **Type**: Pallet, Tote, or Shelf. Selecting Shelf
+  reveals a shelf number field so individual shelf positions can be tracked.
+  Type and shelf number are saved/loaded with the layout and show up in the
+  cargo manifest and the PDF BOL.
+- The tractor unit coupled to the trailer nose is now a low-poly truck model
+  (cab, windshield, hood, bumper, wheels) built from primitives and a
+  canvas-drawn face texture, instead of a plain wireframe box.
+
 ## [2.1.0] - 2026-09-11
 
 ### Added

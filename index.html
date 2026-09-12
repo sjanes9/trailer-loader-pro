@@ -151,7 +151,15 @@
   </div>
 
   <div class="group">
-    <h3>Pallet</h3>
+    <h3>Cargo Item</h3>
+    <label>Type</label>
+    <select id="itemType">
+      <option value="pallet">Pallet</option>
+      <option value="tote">Tote</option>
+      <option value="shelf">Shelf</option>
+    </select>
+    <label id="shelfNumberLabel" style="display:none">Shelf number</label>
+    <input type="text" id="shelfNumber" placeholder="e.g. A-12" style="display:none">
     <label>Label</label>
     <input type="text" id="label" value="P-1">
     <div class="row">
@@ -217,7 +225,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.1.0";
+var APP_VERSION = "2.2.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 2;
 
@@ -346,6 +354,7 @@ function wireUI() {
   $("btnNewTrailer").onclick = function () { addNewTrailer(); };
   $("btnDelTrailer").onclick = removeTrailer;
 
+  $("itemType").onchange = onItemTypeChange;
   $("btnAdd").onclick = function () { addPalletFromForm(); };
   $("btnUpdate").onclick = updatePallet;
   $("btnRotate").onclick = rotatePallet;
@@ -400,18 +409,70 @@ function buildTrailerMeshes(t) {
   );
   frame.position.set(t.dims.l / 2, t.dims.h / 2, t.dims.w / 2);
 
-  var cab = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(100, 80, 80)),
-    new THREE.LineBasicMaterial({ color: 0x555555 })
-  );
-  cab.position.set(-50, 40, t.dims.w / 2);
+  t.floor = floor; t.frame = frame;
+  [floor, frame].forEach(function (m) { m.visible = false; scene.add(m); });
 
-  t.floor = floor; t.frame = frame; t.cabFrame = cab;
-  [floor, frame, cab].forEach(function (m) { m.visible = false; scene.add(m); });
+  t.truck = buildTruckMeshes(t.dims.w / 2);
+  t.truck.forEach(function (m) { m.visible = false; scene.add(m); });
+}
+
+/* Tractor unit coupled to the trailer nose (x=0), built entirely from boxes
+   and a canvas-drawn face texture -- no external model or image file, so the
+   single-file/no-build-step/no-new-dependency constraints still hold. */
+function buildTruckMeshes(centerZ) {
+  var red = new THREE.MeshPhongMaterial({ color: 0xb0342a });
+  var darkRed = new THREE.MeshPhongMaterial({ color: 0x7a2118 });
+  var dark = new THREE.MeshPhongMaterial({ color: 0x1c1c1c });
+  var chrome = new THREE.MeshPhongMaterial({ color: 0x999999 });
+  var face = makeTruckFaceMaterial();
+
+  // Box face material order is [+x, -x, +y, -y, +z, -z]. The tractor points
+  // toward -x (away from the trailer), so the truck-face texture goes on -x.
+  var cab = new THREE.Mesh(
+    new THREE.BoxGeometry(56, 74, 78),
+    [red, face, darkRed, dark, red, red]
+  );
+  cab.position.set(-38, 41, centerZ);
+
+  var hood = new THREE.Mesh(
+    new THREE.BoxGeometry(42, 36, 70),
+    [red, chrome, red, dark, red, red]
+  );
+  hood.position.set(-89, 22, centerZ);
+
+  var bumper = new THREE.Mesh(new THREE.BoxGeometry(6, 12, 76), dark);
+  bumper.position.set(-111, 9, centerZ);
+
+  var wheelGeom = new THREE.BoxGeometry(14, 26, 14);
+  var wheels = [
+    { x: -38, z: centerZ - 36 }, { x: -38, z: centerZ + 36 },
+    { x: -89, z: centerZ - 36 }, { x: -89, z: centerZ + 36 }
+  ].map(function (o) {
+    var w = new THREE.Mesh(wheelGeom, dark);
+    w.position.set(o.x, 13, o.z);
+    return w;
+  });
+
+  return [cab, hood, bumper].concat(wheels);
+}
+
+function makeTruckFaceMaterial() {
+  var canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 256;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#b0342a"; ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = "#20303d"; ctx.fillRect(16, 18, 224, 92);
+  ctx.fillStyle = "#bfeaff"; ctx.fillRect(26, 26, 96, 68);
+  ctx.fillStyle = "#bfeaff"; ctx.fillRect(134, 26, 96, 68);
+  ctx.fillStyle = "#f4d03f"; ctx.fillRect(14, 128, 46, 30);
+  ctx.fillStyle = "#f4d03f"; ctx.fillRect(196, 128, 46, 30);
+  ctx.fillStyle = "#888888"; ctx.fillRect(70, 128, 116, 30);
+  ctx.fillStyle = "#111111"; ctx.fillRect(0, 196, 256, 60);
+  return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
 function disposeTrailerMeshes(t) {
-  ["floor", "frame", "cabFrame"].forEach(function (k) {
+  ["floor", "frame"].forEach(function (k) {
     var m = t[k];
     if (!m) return;
     scene.remove(m);
@@ -419,6 +480,12 @@ function disposeTrailerMeshes(t) {
     if (m.material) m.material.dispose();
     t[k] = null;
   });
+  (t.truck || []).forEach(function (m) {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    disposeMaterial(m.material);
+  });
+  t.truck = [];
 }
 
 function addNewTrailer(opts) {
@@ -429,7 +496,7 @@ function addNewTrailer(opts) {
     dims: opts.dims || { l: preset.l, w: preset.w, h: preset.h },
     maxWeight: num(opts.maxWeight, 45000),
     pallets: [],
-    floor: null, frame: null, cabFrame: null
+    floor: null, frame: null, truck: []
   };
   buildTrailerMeshes(t);
   state.trailers.push(t);
@@ -467,7 +534,7 @@ function switchTrailer() {
     t.pallets.forEach(function (p) { scene.remove(p); });
     if (t.frame) t.frame.visible = false;
     if (t.floor) t.floor.visible = false;
-    if (t.cabFrame) t.cabFrame.visible = false;
+    (t.truck || []).forEach(function (m) { m.visible = false; });
   });
 
   state.current = parseInt($("trailerSelect").value, 10);
@@ -479,7 +546,7 @@ function switchTrailer() {
   t.pallets.forEach(function (p) { scene.add(p); });
   if (t.frame) t.frame.visible = true;
   if (t.floor) t.floor.visible = true;
-  if (t.cabFrame) t.cabFrame.visible = true;
+  (t.truck || []).forEach(function (m) { m.visible = true; });
 
   fillTrailerForm(t);
   selectPallet(null);
@@ -518,7 +585,8 @@ function applyTrailerSettings() {
   t.maxWeight = num($("tMaxWeight").value, 0);
 
   buildTrailerMeshes(t);
-  t.frame.visible = true; t.floor.visible = true; t.cabFrame.visible = true;
+  t.frame.visible = true; t.floor.visible = true;
+  t.truck.forEach(function (m) { m.visible = true; });
 
   t.pallets.forEach(function (p) { clampToTrailer(p); });
   refreshTrailerSelect(state.current);
@@ -541,11 +609,15 @@ function makeLabelMaterial(text, bgColor) {
   return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
+var ITEM_TYPES = { pallet: "Pallet", tote: "Tote", shelf: "Shelf" };
+
 function normalizePallet(d) {
   d = d || {};
   var pos = d.pos || {};
   return {
     label: String(d.label == null ? "P" : d.label),
+    itemType: ITEM_TYPES.hasOwnProperty(d.itemType) ? d.itemType : "pallet",
+    shelfNumber: String(d.shelfNumber || ""),
     l: num(d.l, 48), w: num(d.w, 40), h: num(d.h, 48),
     weight: num(d.weight, 0), value: num(d.value, 0),
     notes: String(d.notes || ""),
@@ -575,12 +647,20 @@ function addPallet(data) {
   return mesh;
 }
 
+function onItemTypeChange() {
+  var isShelf = $("itemType").value === "shelf";
+  $("shelfNumberLabel").style.display = isShelf ? "" : "none";
+  $("shelfNumber").style.display = isShelf ? "" : "none";
+}
+
 function addPalletFromForm() {
   var t = currentTrailer();
   if (!t) return;
 
   var d = {
     label: $("label").value || "P",
+    itemType: $("itemType").value,
+    shelfNumber: $("shelfNumber").value,
     l: num($("L").value, 48), w: num($("W").value, 40), h: num($("H").value, 48),
     weight: num($("Weight").value, 0), value: num($("Value").value, 0),
     notes: $("Notes").value,
@@ -647,6 +727,8 @@ function updatePallet() {
   var sizeChanged = (newL !== d.l || newW !== d.w || newH !== d.h);
 
   d.label = $("label").value;
+  d.itemType = $("itemType").value;
+  d.shelfNumber = $("shelfNumber").value;
   d.weight = num($("Weight").value, 0);
   d.value = num($("Value").value, 0);
   d.notes = $("Notes").value;
@@ -720,6 +802,7 @@ function disposeMesh(m) {
 
 function disposeMaterial(mat) {
   if (!mat) return;
+  if (Array.isArray(mat)) { mat.forEach(disposeMaterial); return; }
   if (mat.map) mat.map.dispose();
   mat.dispose();
 }
@@ -733,6 +816,9 @@ function selectPallet(mesh) {
 
 function fillSidebarForm(d) {
   $("label").value = d.label;
+  $("itemType").value = d.itemType || "pallet";
+  $("shelfNumber").value = d.shelfNumber || "";
+  onItemTypeChange();
   $("L").value = d.l; $("W").value = d.w; $("H").value = d.h;
   $("Weight").value = d.weight;
   $("Value").value = d.value;
@@ -923,9 +1009,12 @@ function updateManifest() {
     var title = document.createElement("b");
     title.textContent = d.label;
 
+    var typeLabel = ITEM_TYPES[d.itemType] || "Pallet";
+    if (d.itemType === "shelf" && d.shelfNumber) typeLabel += " #" + d.shelfNumber;
+
     var meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = d.l + " x " + d.w + " x " + d.h + " in  |  " +
+    meta.textContent = typeLabel + "  |  " + d.l + " x " + d.w + " x " + d.h + " in  |  " +
                        d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString();
 
     div.appendChild(title);
@@ -1044,8 +1133,10 @@ function generatePDF() {
   var my = 30;
   t.pallets.forEach(function (p, i) {
     var d = p.userData;
+    var typeTag = ITEM_TYPES[d.itemType] || "Pallet";
+    if (d.itemType === "shelf" && d.shelfNumber) typeTag += " #" + d.shelfNumber;
     doc.setFontSize(9);
-    doc.text((i + 1) + ". " + d.label + "  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
+    doc.text((i + 1) + ". " + d.label + " (" + typeTag + ")  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
              d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString(), 15, my);
     doc.setFontSize(7); doc.setTextColor(100);
     doc.text("Position (in from nose / floor / left): " +
@@ -1081,7 +1172,8 @@ function serialize() {
         pallets: t.pallets.map(function (p) {
           var d = p.userData;
           return {
-            label: d.label, l: d.l, w: d.w, h: d.h,
+            label: d.label, itemType: d.itemType, shelfNumber: d.shelfNumber,
+            l: d.l, w: d.w, h: d.h,
             weight: d.weight, value: d.value, notes: d.notes,
             img: d.img, color: d.color,
             pos: { x: p.position.x, y: p.position.y, z: p.position.z }
