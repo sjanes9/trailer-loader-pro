@@ -30,7 +30,10 @@
   .ver { float:right; font-size:10px; color:#888; font-weight:normal; border:0; }
   .group { background:#f8f9fa; padding:12px; border-radius:8px; margin-bottom:12px; border:1px solid #ddd; }
   label { display:block; font-weight:bold; font-size:10px; margin-bottom:3px; color:#555; text-transform:uppercase; letter-spacing:.3px; }
-  input, select, textarea { width:100%; padding:7px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; font-family:inherit; font-size:13px; }
+  /* 16px minimum keeps iOS/Android from auto-zooming the page on focus --
+     below that threshold, mobile browsers zoom in to make the text legible,
+     which throws off the fixed-position panel-toggle buttons. */
+  input, select, textarea { width:100%; padding:7px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; font-family:inherit; font-size:16px; }
   input[type=checkbox] { width:auto; margin:0 4px 0 0; }
   button { width:100%; padding:10px; cursor:pointer; background:var(--green); color:#fff; border:none; font-weight:bold; border-radius:4px; margin-bottom:6px; font-size:13px; }
   button:hover { filter:brightness(1.08); }
@@ -288,7 +291,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.8.0";
+var APP_VERSION = "2.8.1";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;

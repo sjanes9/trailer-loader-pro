@@ -2,6 +2,16 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.8.1] - 2026-09-12
+
+### Fixed
+
+- **Tapping a text field on mobile threw off the panel hide/show buttons.**
+  Form inputs were 13px, below the ~16px threshold under which iOS/Android
+  browsers auto-zoom the page on focus to keep text legible; that zoom is
+  what shifted the fixed-position toggle buttons out of reach. Inputs are
+  now 16px, which stops the auto-zoom from triggering at all.
+
 ## [2.8.0] - 2026-09-12
 
 ### Changed
