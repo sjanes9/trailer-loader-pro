@@ -212,20 +212,21 @@ test("pallets are clamped inside the trailer envelope", () => {
   eq(p.userData.pos.x, p.position.x, "userData position not synced");
 });
 
-test("changing trailer dimensions rebuilds the frame and re-clamps cargo", () => {
+test("changing trailer dimensions (entered in feet) rebuilds the frame and re-clamps cargo", () => {
   const win = boot();
   win.addPalletFromForm();
   const p = win.state.trailers[0].pallets[0];
   p.position.set(600, 24, 50);
   const d = win.document;
-  d.getElementById("tL").value = "232";
-  d.getElementById("tW").value = "92";
-  d.getElementById("tH").value = "94";
+  // Trailer L/W/H fields are in feet; applyTrailerSettings converts to inches.
+  d.getElementById("tL").value = "20";
+  d.getElementById("tW").value = "8";
+  d.getElementById("tH").value = "8";
   win.applyTrailerSettings();
-  eq(win.state.trailers[0].dims.l, 232, "dims applied");
-  eq(win.state.trailers[0].frame.position.x, 116, "frame not rebuilt and recentered on the new length");
-  eq(win.state.trailers[0].floor.geometry.parameters.width, 232, "floor plane not rebuilt");
-  assert(p.position.x <= 232, "cargo not re-clamped after shrink");
+  eq(win.state.trailers[0].dims.l, 240, "dims applied (converted from feet to inches)");
+  eq(win.state.trailers[0].frame.position.x, 120, "frame not rebuilt and recentered on the new length");
+  eq(win.state.trailers[0].floor.geometry.parameters.width, 240, "floor plane not rebuilt");
+  assert(p.position.x <= 240, "cargo not re-clamped after shrink");
 });
 
 test("BOL header round-trips through the modal instead of being wiped", () => {
@@ -313,6 +314,62 @@ test("removing a trailer disposes its cargo and keeps at least one trailer", () 
   eq(win.state.trailers.length, 1, "trailer removed");
   win.removeTrailer();
   eq(win.state.trailers.length, 1, "last trailer must not be removable");
+});
+
+test("bulk-adding shelves creates numbered fixtures excluded from cargo totals", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfCount").value = "3";
+  win.addShelvesFromForm();
+  const t = win.state.trailers[0];
+  eq(t.fixtures.length, 3, "three fixtures created");
+  eq(t.fixtures.map(f => f.shelfNumber).join(","), "1,2,3", "shelf numbers auto-increment from Start #");
+
+  win.addPalletFromForm();
+  const tot = win.trailerTotals(t);
+  eq(tot.count, 1, "fixtures are not counted as cargo pieces");
+  eq(tot.weight, win.document.getElementById("Weight").value * 1, "fixtures do not contribute weight");
+});
+
+test("assigning a pallet to a shelf positions it on that shelf, not the floor", () => {
+  const win = boot();
+  const d = win.document;
+  win.addShelvesFromForm();
+  const shelf = win.state.trailers[0].fixtures[0];
+
+  d.getElementById("cargoShelfId").value = "1";
+  d.getElementById("W").value = "10";
+  d.getElementById("H").value = "10";
+  win.addPalletFromForm();
+
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.shelfId, "1", "shelfId recorded on the cargo item");
+  eq(p.position.x, shelf.pos.x, "cargo x lines up with the shelf");
+  eq(p.position.z, shelf.pos.z, "cargo z lines up with the shelf");
+  assert(p.position.y > shelf.pos.y + shelf.h * 0.9, "cargo rests at/above the shelf's top level, not the floor");
+});
+
+test("removing a shelf fixture clears the assignment on cargo that referenced it", () => {
+  const win = boot();
+  const d = win.document;
+  win.addShelvesFromForm();
+  d.getElementById("cargoShelfId").value = "1";
+  win.addPalletFromForm();
+
+  win.removeFixture(0);
+
+  eq(win.state.trailers[0].fixtures.length, 0, "fixture removed");
+  eq(win.state.trailers[0].pallets[0].userData.shelfId, "", "orphaned shelf reference cleared");
+});
+
+test("pallet and tote cargo get decorative child meshes; itemType no longer includes shelf", () => {
+  const win = boot();
+  win.addPalletFromForm();
+  const pallet = win.state.trailers[0].pallets[0];
+  eq(pallet.userData.itemType, "pallet", "defaults to pallet type");
+
+  const normalized = win.normalizePallet({ itemType: "shelf" });
+  eq(normalized.itemType, "pallet", "legacy 'shelf' item type falls back to pallet, since shelves are fixtures now");
 });
 
 test("both side panels collapse and can be reopened", () => {

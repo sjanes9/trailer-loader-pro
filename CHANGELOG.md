@@ -2,6 +2,30 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.3.0] - 2026-09-12
+
+### Added
+
+- Trailer dimensions are entered in **feet** instead of inches, with clearer
+  "Length / Width / Height" labels. Presets now show their nominal size in
+  feet too. Internally the app still works in inches everywhere else (cargo
+  dimensions, positions, the PDF), so nothing else changed units.
+- **Shelving fixtures.** Shelves are no longer a cargo item type -- they're
+  trailer fixtures, added in bulk (start number + count, size, wall side,
+  height off the floor) from a new "Shelving" panel, rendered as a rack
+  (posts + boards) and excluded from weight/value/floor-use stats, matching
+  how a real shelving unit isn't cargo. Pallets and totes can be explicitly
+  assigned to a shelf via a "Place on shelf" dropdown, which also positions
+  the item on that shelf instead of the floor. Removing a shelf clears the
+  assignment on anything that referenced it. Shelves persist through
+  save/load.
+- Pallets and totes now look like what they are instead of a plain box:
+  pallets get a wooden deck plate under the load, totes get a rim band.
+- **Update-available banner.** The app checks its own deployed URL
+  periodically (and when the tab regains focus) for a newer `APP_VERSION`
+  and shows a dismissible "Reload to get it" banner if one is found. No-ops
+  entirely offline or when opened via `file://`.
+
 ## [2.2.0] - 2026-09-12
 
 ### Added

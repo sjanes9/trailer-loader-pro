@@ -136,9 +136,9 @@
     <label>Preset (nominal interior)</label>
     <select id="trailerPreset"></select>
     <div class="row">
-      <div><label>Len in</label><input type="number" id="tL" min="1" step="1"></div>
-      <div><label>Wid in</label><input type="number" id="tW" min="1" step="1"></div>
-      <div><label>Hgt in</label><input type="number" id="tH" min="1" step="1"></div>
+      <div><label>Length (ft)</label><input type="number" id="tL" min="0.1" step="0.1"></div>
+      <div><label>Width (ft)</label><input type="number" id="tW" min="0.1" step="0.1"></div>
+      <div><label>Height (ft)</label><input type="number" id="tH" min="0.1" step="0.1"></div>
     </div>
     <label>Max payload (lb)</label>
     <input type="number" id="tMaxWeight" min="0" step="100" value="45000">
@@ -151,15 +151,38 @@
   </div>
 
   <div class="group">
+    <h3>Shelving (Fixtures)</h3>
+    <div class="row">
+      <div><label>Start #</label><input type="text" id="shelfStart" value="1"></div>
+      <div><label>Count</label><input type="number" id="shelfCount" value="1" min="1" step="1"></div>
+    </div>
+    <div class="row">
+      <div><label>Len in</label><input type="number" id="shelfL" value="36" min="1" step="1"></div>
+      <div><label>Wid in</label><input type="number" id="shelfW" value="18" min="1" step="1"></div>
+      <div><label>Hgt in</label><input type="number" id="shelfH" value="72" min="1" step="1"></div>
+    </div>
+    <label>Mount side</label>
+    <select id="shelfSide">
+      <option value="left">Left wall</option>
+      <option value="right">Right wall</option>
+    </select>
+    <label>Height off floor (in)</label>
+    <input type="number" id="shelfElevation" value="0" min="0" step="1">
+    <button class="util-btn" id="btnAddShelves">Add Shelves</button>
+    <p class="hint">Shelves are trailer fixtures, not cargo -- they don't count toward weight, value or floor-use stats. Assign pallets/totes to one with "Place on shelf" below.</p>
+  </div>
+
+  <div class="group">
     <h3>Cargo Item</h3>
     <label>Type</label>
     <select id="itemType">
       <option value="pallet">Pallet</option>
       <option value="tote">Tote</option>
-      <option value="shelf">Shelf</option>
     </select>
-    <label id="shelfNumberLabel" style="display:none">Shelf number</label>
-    <input type="text" id="shelfNumber" placeholder="e.g. A-12" style="display:none">
+    <label>Place on shelf</label>
+    <select id="cargoShelfId">
+      <option value="">None (floor)</option>
+    </select>
     <label>Label</label>
     <input type="text" id="label" value="P-1">
     <div class="row">
@@ -207,10 +230,19 @@
     <div id="statPayload" class="stat"><span>Payload used</span><b>0%</b></div>
     <p class="hint">Center of gravity is a planning aid computed from entered pallet weights and positions. It is not an axle-weight calculation and does not replace certified scale tickets.</p>
     <div id="manifestList"></div>
+
+    <h3 style="margin-top:16px">Trailer Fixtures</h3>
+    <div id="fixtureList"></div>
   </div>
 </div>
 
 <div id="toast"></div>
+
+<div id="updateBanner" style="display:none; position:fixed; top:0; left:0; right:0; background:var(--slate); color:#fff; padding:10px 16px; z-index:2500; align-items:center; gap:12px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.4);">
+  <span id="updateVersionText" style="flex:1 1 auto"></span>
+  <button id="updateReloadBtn" style="width:auto; background:var(--green); padding:6px 14px; margin:0">Reload now</button>
+  <button id="updateDismissBtn" style="width:auto; background:var(--grey); padding:6px 14px; margin:0">Dismiss</button>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/OrbitControls.js"></script>
@@ -225,9 +257,11 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.2.0";
+var APP_VERSION = "2.3.0";
 var SAVE_FORMAT = "trailer-loader-pro";
-var SAVE_VERSION = 2;
+var SAVE_VERSION = 3;
+var IN_PER_FT = 12;
+var UPDATE_CHECK_MS = 5 * 60 * 1000;
 
 /* Nominal interior dimensions in inches. Starting points, not spec values. */
 var PRESETS = [
@@ -281,6 +315,10 @@ function randomColor() {
   return "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
 }
 
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
 /* ------------------------------ boot ------------------------------ */
 
 function librariesReady() {
@@ -328,6 +366,14 @@ function init() {
   window.addEventListener("resize", onResize);
   onResize();
   animate();
+
+  if (typeof fetch === "function") {
+    checkForUpdate();
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) checkForUpdate();
+    });
+    setInterval(checkForUpdate, UPDATE_CHECK_MS);
+  }
 }
 
 function buildPresetOptions() {
@@ -336,9 +382,30 @@ function buildPresetOptions() {
   PRESETS.forEach(function (p) {
     var o = document.createElement("option");
     o.value = p.id;
-    o.textContent = p.id === "custom" ? p.name : p.name + " (" + p.l + " x " + p.w + " x " + p.h + ")";
+    o.textContent = p.id === "custom" ? p.name :
+      p.name + " (" + round2(p.l / IN_PER_FT) + " x " + round2(p.w / IN_PER_FT) + " x " + round2(p.h / IN_PER_FT) + " ft)";
     sel.appendChild(o);
   });
+}
+
+/* ------------------------------ update check ------------------------------ */
+
+function checkForUpdate() {
+  fetch(window.location.href, { cache: "no-store" })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      var m = /var APP_VERSION\s*=\s*"([^"]+)"/.exec(html);
+      if (m && m[1] && m[1] !== APP_VERSION) showUpdateBanner(m[1]);
+    })
+    .catch(function () { /* offline, air-gapped, or file:// -- no-op */ });
+}
+
+function showUpdateBanner(newVersion) {
+  var banner = $("updateBanner");
+  if (banner.dataset.shown === "1") return;
+  banner.dataset.shown = "1";
+  $("updateVersionText").textContent = "Trailer Loader Pro v" + newVersion + " is available. Reload to get it.";
+  banner.style.display = "flex";
 }
 
 function wireUI() {
@@ -354,7 +421,8 @@ function wireUI() {
   $("btnNewTrailer").onclick = function () { addNewTrailer(); };
   $("btnDelTrailer").onclick = removeTrailer;
 
-  $("itemType").onchange = onItemTypeChange;
+  $("btnAddShelves").onclick = addShelvesFromForm;
+
   $("btnAdd").onclick = function () { addPalletFromForm(); };
   $("btnUpdate").onclick = updatePallet;
   $("btnRotate").onclick = rotatePallet;
@@ -366,6 +434,9 @@ function wireUI() {
   $("manifestToggle").onclick = toggleManifest;
   $("bolSaveBtn").onclick = saveBOL;
   $("bolCancelBtn").onclick = function () { $("bolModal").style.display = "none"; };
+
+  $("updateReloadBtn").onclick = function () { location.reload(); };
+  $("updateDismissBtn").onclick = function () { $("updateBanner").style.display = "none"; };
 
   document.addEventListener("keydown", onKeyDown);
 }
@@ -496,6 +567,7 @@ function addNewTrailer(opts) {
     dims: opts.dims || { l: preset.l, w: preset.w, h: preset.h },
     maxWeight: num(opts.maxWeight, 45000),
     pallets: [],
+    fixtures: [],
     floor: null, frame: null, truck: []
   };
   buildTrailerMeshes(t);
@@ -511,6 +583,7 @@ function removeTrailer() {
   if (!confirm('Remove "' + t.name + '" and its ' + t.pallets.length + ' pallet(s)?')) return;
   t.pallets.slice().forEach(function (p) { disposeMesh(p); });
   t.pallets.length = 0;
+  disposeFixtures(t);
   disposeTrailerMeshes(t);
   state.trailers.splice(state.current, 1);
   refreshTrailerSelect(Math.max(0, state.current - 1));
@@ -535,6 +608,7 @@ function switchTrailer() {
     if (t.frame) t.frame.visible = false;
     if (t.floor) t.floor.visible = false;
     (t.truck || []).forEach(function (m) { m.visible = false; });
+    (t.fixtures || []).forEach(function (f) { f.meshes.forEach(function (m) { m.visible = false; }); });
   });
 
   state.current = parseInt($("trailerSelect").value, 10);
@@ -547,9 +621,12 @@ function switchTrailer() {
   if (t.frame) t.frame.visible = true;
   if (t.floor) t.floor.visible = true;
   (t.truck || []).forEach(function (m) { m.visible = true; });
+  (t.fixtures || []).forEach(function (f) { f.meshes.forEach(function (m) { m.visible = true; }); });
 
   fillTrailerForm(t);
   selectPallet(null);
+  refreshShelfOptions();
+  updateFixtureList();
   orbit.target.set(t.dims.l / 2, 0, t.dims.w / 2);
   orbit.update();
   updateManifest();
@@ -558,9 +635,9 @@ function switchTrailer() {
 
 function fillTrailerForm(t) {
   $("trailerName").value = t.name;
-  $("tL").value = t.dims.l;
-  $("tW").value = t.dims.w;
-  $("tH").value = t.dims.h;
+  $("tL").value = round2(t.dims.l / IN_PER_FT);
+  $("tW").value = round2(t.dims.w / IN_PER_FT);
+  $("tH").value = round2(t.dims.h / IN_PER_FT);
   $("tMaxWeight").value = t.maxWeight;
   var match = PRESETS.filter(function (p) {
     return p.l === t.dims.l && p.w === t.dims.w && p.h === t.dims.h;
@@ -571,13 +648,13 @@ function fillTrailerForm(t) {
 function onPresetChange() {
   var p = PRESETS.filter(function (x) { return x.id === $("trailerPreset").value; })[0];
   if (!p || p.id === "custom") return;
-  $("tL").value = p.l; $("tW").value = p.w; $("tH").value = p.h;
+  $("tL").value = round2(p.l / IN_PER_FT); $("tW").value = round2(p.w / IN_PER_FT); $("tH").value = round2(p.h / IN_PER_FT);
 }
 
 function applyTrailerSettings() {
   var t = currentTrailer();
   if (!t) return;
-  var l = num($("tL").value, 0), w = num($("tW").value, 0), h = num($("tH").value, 0);
+  var l = num($("tL").value, 0) * IN_PER_FT, w = num($("tW").value, 0) * IN_PER_FT, h = num($("tH").value, 0) * IN_PER_FT;
   if (l <= 0 || w <= 0 || h <= 0) { toast("Trailer dimensions must be greater than zero.", "err"); return; }
 
   t.name = ($("trailerName").value || t.name).trim();
@@ -596,6 +673,147 @@ function applyTrailerSettings() {
   toast("Trailer settings applied.", "ok");
 }
 
+/* ------------------------------ shelving fixtures ------------------------------ */
+
+/* Shelves are trailer fixtures, not cargo: a rack rendered from posts and
+   boards, tracked in t.fixtures (parallel to t.pallets) and excluded from
+   trailerTotals() by construction, since that only walks t.pallets. */
+function buildShelfMeshes(shelfNumber, l, w, h, pos) {
+  var postMat = new THREE.MeshPhongMaterial({ color: 0x8a8f94 });
+  var boardMat = new THREE.MeshPhongMaterial({ color: 0xb08d57 });
+  var labelMat = makeLabelMaterial("Shelf " + shelfNumber, "#d9c39a");
+
+  var halfL = Math.max(l / 2 - 2, 1), halfW = Math.max(w / 2 - 2, 1);
+  var postGeom = new THREE.BoxGeometry(4, h, 4);
+  var posts = [
+    [halfL, halfW], [halfL, -halfW], [-halfL, halfW], [-halfL, -halfW]
+  ].map(function (o) {
+    var m = new THREE.Mesh(postGeom, postMat);
+    m.position.set(pos.x + o[0], pos.y + h / 2, pos.z + o[1]);
+    return m;
+  });
+
+  var levelYs = [h * 0.06, h * 0.5, h * 0.94];
+  var boards = levelYs.map(function (ly, i) {
+    var mat = (i === levelYs.length - 1) ? labelMat : boardMat;
+    var b = new THREE.Mesh(new THREE.BoxGeometry(l, 4, w), mat);
+    b.position.set(pos.x, pos.y + ly, pos.z);
+    return b;
+  });
+
+  return posts.concat(boards);
+}
+
+function addShelvesFromForm() {
+  var t = currentTrailer();
+  if (!t) return;
+
+  var count = Math.max(1, Math.round(num($("shelfCount").value, 1)));
+  var l = num($("shelfL").value, 36), w = num($("shelfW").value, 18), h = num($("shelfH").value, 72);
+  if (l <= 0 || w <= 0 || h <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
+
+  var side = $("shelfSide").value === "right" ? "right" : "left";
+  var elevation = num($("shelfElevation").value, 0);
+  var z = side === "left" ? (w / 2) : (t.dims.w - w / 2);
+  var spacing = t.dims.l / count;
+
+  var label = $("shelfStart").value || "1";
+  for (var i = 0; i < count; i++) {
+    var x = Math.min(Math.max(spacing * i + spacing / 2, l / 2), t.dims.l - l / 2);
+    var pos = { x: x, y: elevation, z: z };
+    var meshes = buildShelfMeshes(label, l, w, h, pos);
+    meshes.forEach(function (m) { scene.add(m); });
+    t.fixtures.push({ shelfNumber: label, l: l, w: w, h: h, pos: pos, meshes: meshes });
+    label = nextLabel(label);
+  }
+
+  refreshShelfOptions();
+  updateFixtureList();
+  toast(count + " shelf fixture(s) added.", "ok");
+}
+
+function removeFixture(index) {
+  var t = currentTrailer();
+  if (!t) return;
+  var f = t.fixtures[index];
+  if (!f) return;
+  f.meshes.forEach(function (m) {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    disposeMaterial(m.material);
+  });
+  t.fixtures.splice(index, 1);
+  t.pallets.forEach(function (p) {
+    if (p.userData.shelfId === f.shelfNumber) p.userData.shelfId = "";
+  });
+  refreshShelfOptions();
+  updateFixtureList();
+  updateManifest();
+}
+
+function disposeFixtures(t) {
+  (t.fixtures || []).forEach(function (f) {
+    f.meshes.forEach(function (m) {
+      scene.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      disposeMaterial(m.material);
+    });
+  });
+  t.fixtures = [];
+}
+
+function refreshShelfOptions() {
+  var sel = $("cargoShelfId");
+  var current = sel.value;
+  sel.innerHTML = "";
+  var noneOpt = document.createElement("option");
+  noneOpt.value = ""; noneOpt.textContent = "None (floor)";
+  sel.appendChild(noneOpt);
+  var t = currentTrailer();
+  (t ? t.fixtures : []).forEach(function (f) {
+    var o = document.createElement("option");
+    o.value = f.shelfNumber;
+    o.textContent = "Shelf " + f.shelfNumber;
+    sel.appendChild(o);
+  });
+  if ([].slice.call(sel.options).some(function (o) { return o.value === current; })) sel.value = current;
+}
+
+function updateFixtureList() {
+  var t = currentTrailer();
+  var list = $("fixtureList");
+  list.innerHTML = "";
+  if (!t || !t.fixtures.length) {
+    var empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No shelving added yet.";
+    list.appendChild(empty);
+    return;
+  }
+  t.fixtures.forEach(function (f, i) {
+    var div = document.createElement("div");
+    div.className = "manifest-item";
+
+    var title = document.createElement("b");
+    title.textContent = "Shelf " + f.shelfNumber;
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = f.l + " x " + f.w + " x " + f.h + " in";
+
+    var del = document.createElement("button");
+    del.className = "warn-btn";
+    del.style.marginTop = "6px";
+    del.textContent = "Remove";
+    del.onclick = function () { removeFixture(i); };
+
+    div.appendChild(title);
+    div.appendChild(meta);
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+}
+
 /* ------------------------------ pallets ------------------------------ */
 
 function makeLabelMaterial(text, bgColor) {
@@ -609,7 +827,7 @@ function makeLabelMaterial(text, bgColor) {
   return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
-var ITEM_TYPES = { pallet: "Pallet", tote: "Tote", shelf: "Shelf" };
+var ITEM_TYPES = { pallet: "Pallet", tote: "Tote" };
 
 function normalizePallet(d) {
   d = d || {};
@@ -617,7 +835,7 @@ function normalizePallet(d) {
   return {
     label: String(d.label == null ? "P" : d.label),
     itemType: ITEM_TYPES.hasOwnProperty(d.itemType) ? d.itemType : "pallet",
-    shelfNumber: String(d.shelfNumber || ""),
+    shelfId: String(d.shelfId || ""),
     l: num(d.l, 48), w: num(d.w, 40), h: num(d.h, 48),
     weight: num(d.weight, 0), value: num(d.value, 0),
     notes: String(d.notes || ""),
@@ -627,11 +845,52 @@ function normalizePallet(d) {
   };
 }
 
+/* Decorative child meshes only -- the parent box stays the single hitbox
+   used for drag/clamp/collision, so its geometry.parameters never change
+   shape because of these. Object3D.add() with no supporting scene graph
+   (as in the headless test stub) is a safe no-op. */
+function addCargoDecoration(mesh, d) {
+  if (d.itemType === "pallet") {
+    var deckMat = new THREE.MeshPhongMaterial({ color: 0xa9773f });
+    var deckH = Math.max(4, d.h * 0.08);
+    var deck = new THREE.Mesh(new THREE.BoxGeometry(d.l + 4, deckH, d.w + 4), deckMat);
+    deck.position.set(0, -d.h / 2 + deckH / 2, 0);
+    mesh.add(deck);
+
+    var loadMat = new THREE.MeshPhongMaterial({ color: 0xd8c9a3 });
+    var lw = d.l * 0.42, lh = d.h * 0.4, ld = d.w * 0.42;
+    [[-d.l * 0.2, d.w * 0.18], [d.l * 0.18, -d.w * 0.15]].forEach(function (o) {
+      var box = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), loadMat);
+      box.position.set(o[0], d.h / 2 - lh / 2 + deckH, o[1]);
+      mesh.add(box);
+    });
+  } else if (d.itemType === "tote") {
+    var lipMat = new THREE.MeshPhongMaterial({ color: 0x2c3e50 });
+    var lip = new THREE.Mesh(new THREE.BoxGeometry(d.l + 2, Math.max(3, d.h * 0.08), d.w + 2), lipMat);
+    lip.position.set(0, d.h / 2, 0);
+    mesh.add(lip);
+  }
+}
+
+function clearCargoDecoration(mesh) {
+  (mesh.children || []).slice().forEach(function (c) {
+    mesh.remove(c);
+    if (c.geometry) c.geometry.dispose();
+    disposeMaterial(c.material);
+  });
+}
+
+function refreshCargoDecoration(mesh) {
+  clearCargoDecoration(mesh);
+  addCargoDecoration(mesh, mesh.userData);
+}
+
 function makePalletMesh(data) {
   var d = normalizePallet(data);
   var mesh = new THREE.Mesh(new THREE.BoxGeometry(d.l, d.h, d.w), makeLabelMaterial(d.label, d.color));
   mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
   mesh.userData = d;
+  addCargoDecoration(mesh, d);
   return mesh;
 }
 
@@ -647,10 +906,12 @@ function addPallet(data) {
   return mesh;
 }
 
-function onItemTypeChange() {
-  var isShelf = $("itemType").value === "shelf";
-  $("shelfNumberLabel").style.display = isShelf ? "" : "none";
-  $("shelfNumber").style.display = isShelf ? "" : "none";
+function findShelf(t, shelfId) {
+  return (t.fixtures || []).filter(function (f) { return f.shelfNumber === shelfId; })[0] || null;
+}
+
+function shelfRestPosition(f, itemH) {
+  return { x: f.pos.x, y: f.pos.y + f.h * 0.94 + 2 + itemH / 2, z: f.pos.z };
 }
 
 function addPalletFromForm() {
@@ -660,7 +921,7 @@ function addPalletFromForm() {
   var d = {
     label: $("label").value || "P",
     itemType: $("itemType").value,
-    shelfNumber: $("shelfNumber").value,
+    shelfId: $("cargoShelfId").value,
     l: num($("L").value, 48), w: num($("W").value, 40), h: num($("H").value, 48),
     weight: num($("Weight").value, 0), value: num($("Value").value, 0),
     notes: $("Notes").value,
@@ -669,6 +930,12 @@ function addPalletFromForm() {
   };
 
   if (d.l <= 0 || d.w <= 0 || d.h <= 0) { toast("Pallet dimensions must be greater than zero.", "err"); return; }
+
+  if (d.shelfId) {
+    var shelf = findShelf(t, d.shelfId);
+    if (shelf) d.pos = shelfRestPosition(shelf, d.h);
+  }
+
   warnIfOversize(d, t);
 
   var fileInput = $("palletImg");
@@ -725,10 +992,13 @@ function updatePallet() {
 
   var labelChanged = d.label !== $("label").value;
   var sizeChanged = (newL !== d.l || newW !== d.w || newH !== d.h);
+  var typeChanged = d.itemType !== $("itemType").value;
+  var newShelfId = $("cargoShelfId").value;
+  var shelfChanged = d.shelfId !== newShelfId;
 
   d.label = $("label").value;
   d.itemType = $("itemType").value;
-  d.shelfNumber = $("shelfNumber").value;
+  d.shelfId = newShelfId;
   d.weight = num($("Weight").value, 0);
   d.value = num($("Value").value, 0);
   d.notes = $("Notes").value;
@@ -742,12 +1012,21 @@ function updatePallet() {
     disposeMaterial(p.material);
     p.material = makeLabelMaterial(d.label, d.color);
   }
+  if (sizeChanged || typeChanged) refreshCargoDecoration(p);
 
   var file = $("palletImg").files && $("palletImg").files[0];
   if (file) {
     var fr = new FileReader();
     fr.onload = function (e) { d.img = String(e.target.result || ""); $("palletImg").value = ""; updateManifest(); };
     fr.readAsDataURL(file);
+  }
+
+  if (t && shelfChanged && newShelfId) {
+    var shelf = findShelf(t, newShelfId);
+    if (shelf) {
+      var rest = shelfRestPosition(shelf, d.h);
+      p.position.set(rest.x, rest.y, rest.z);
+    }
   }
 
   if (t) warnIfOversize(d, t);
@@ -764,6 +1043,7 @@ function rotatePallet() {
   var swap = d.l; d.l = d.w; d.w = swap;
   p.geometry.dispose();
   p.geometry = new THREE.BoxGeometry(d.l, d.h, d.w);
+  refreshCargoDecoration(p);
   clampToTrailer(p);
   resolveCollisions(p);
   fillSidebarForm(d);
@@ -796,6 +1076,10 @@ function removePallet(p) {
 
 function disposeMesh(m) {
   scene.remove(m);
+  (m.children || []).slice().forEach(function (c) {
+    if (c.geometry) c.geometry.dispose();
+    disposeMaterial(c.material);
+  });
   if (m.geometry) m.geometry.dispose();
   disposeMaterial(m.material);
 }
@@ -817,8 +1101,7 @@ function selectPallet(mesh) {
 function fillSidebarForm(d) {
   $("label").value = d.label;
   $("itemType").value = d.itemType || "pallet";
-  $("shelfNumber").value = d.shelfNumber || "";
-  onItemTypeChange();
+  $("cargoShelfId").value = d.shelfId || "";
   $("L").value = d.l; $("W").value = d.w; $("H").value = d.h;
   $("Weight").value = d.weight;
   $("Value").value = d.value;
@@ -1010,7 +1293,7 @@ function updateManifest() {
     title.textContent = d.label;
 
     var typeLabel = ITEM_TYPES[d.itemType] || "Pallet";
-    if (d.itemType === "shelf" && d.shelfNumber) typeLabel += " #" + d.shelfNumber;
+    if (d.shelfId) typeLabel += " → Shelf " + d.shelfId;
 
     var meta = document.createElement("div");
     meta.className = "meta";
@@ -1134,7 +1417,7 @@ function generatePDF() {
   t.pallets.forEach(function (p, i) {
     var d = p.userData;
     var typeTag = ITEM_TYPES[d.itemType] || "Pallet";
-    if (d.itemType === "shelf" && d.shelfNumber) typeTag += " #" + d.shelfNumber;
+    if (d.shelfId) typeTag += " on Shelf " + d.shelfId;
     doc.setFontSize(9);
     doc.text((i + 1) + ". " + d.label + " (" + typeTag + ")  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
              d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString(), 15, my);
@@ -1172,12 +1455,15 @@ function serialize() {
         pallets: t.pallets.map(function (p) {
           var d = p.userData;
           return {
-            label: d.label, itemType: d.itemType, shelfNumber: d.shelfNumber,
+            label: d.label, itemType: d.itemType, shelfId: d.shelfId,
             l: d.l, w: d.w, h: d.h,
             weight: d.weight, value: d.value, notes: d.notes,
             img: d.img, color: d.color,
             pos: { x: p.position.x, y: p.position.y, z: p.position.z }
           };
+        }),
+        fixtures: t.fixtures.map(function (f) {
+          return { shelfNumber: f.shelfNumber, l: f.l, w: f.w, h: f.h, pos: f.pos };
         })
       };
     })
@@ -1251,6 +1537,14 @@ function loadProject(e) {
         scene.add(mesh);
         t.pallets.push(mesh);
       });
+      (td.fixtures || []).forEach(function (fd) {
+        var shelfNumber = String(fd.shelfNumber || "1");
+        var fl = num(fd.l, 36), fw = num(fd.w, 18), fh = num(fd.h, 72);
+        var fpos = fd.pos || { x: 0, y: 0, z: 0 };
+        var meshes = buildShelfMeshes(shelfNumber, fl, fw, fh, fpos);
+        meshes.forEach(function (m) { scene.add(m); });
+        t.fixtures.push({ shelfNumber: shelfNumber, l: fl, w: fw, h: fh, pos: fpos, meshes: meshes });
+      });
     });
 
     refreshTrailerSelect(0);
@@ -1266,6 +1560,7 @@ function clearAll() {
   state.trailers.forEach(function (t) {
     t.pallets.forEach(function (p) { disposeMesh(p); });
     t.pallets.length = 0;
+    disposeFixtures(t);
     disposeTrailerMeshes(t);
   });
   state.trailers = [];
