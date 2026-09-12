@@ -2,6 +2,26 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.4.0] - 2026-09-12
+
+### Fixed
+
+- **Cargo could visually poke through the trailer's walls.** Pallets and
+  totes got decorative meshes in 2.3.0 (a wood deck plate, a rim band) that
+  were slightly larger than the item's actual footprint, so when an item
+  was clamped flush against a wall the decoration overhung past it. All
+  cargo decoration is now sized to fit flush inside the item's own footprint,
+  so it can never extend past whatever boundary the item itself is clamped to.
+
+### Changed
+
+- **Shelving is now one draggable unit with multiple levels**, not several
+  separate racks spread along the wall. "Levels" (was "Count") sets how
+  many individually assignable shelves stack inside that one unit. Drag a
+  unit in the 3D view to reposition it -- any cargo assigned to one of its
+  levels re-snaps to follow it. Units remain fixtures (excluded from
+  weight/value/floor-use stats) and removable from the Trailer Fixtures list.
+
 ## [2.3.0] - 2026-09-12
 
 ### Added

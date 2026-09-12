@@ -154,22 +154,22 @@
     <h3>Shelving (Fixtures)</h3>
     <div class="row">
       <div><label>Start #</label><input type="text" id="shelfStart" value="1"></div>
-      <div><label>Count</label><input type="number" id="shelfCount" value="1" min="1" step="1"></div>
+      <div><label>Levels</label><input type="number" id="shelfCount" value="1" min="1" step="1"></div>
     </div>
     <div class="row">
       <div><label>Len in</label><input type="number" id="shelfL" value="36" min="1" step="1"></div>
       <div><label>Wid in</label><input type="number" id="shelfW" value="18" min="1" step="1"></div>
-      <div><label>Hgt in</label><input type="number" id="shelfH" value="72" min="1" step="1"></div>
+      <div><label>Total hgt in</label><input type="number" id="shelfH" value="72" min="1" step="1"></div>
     </div>
-    <label>Mount side</label>
+    <label>Starting mount side</label>
     <select id="shelfSide">
       <option value="left">Left wall</option>
       <option value="right">Right wall</option>
     </select>
     <label>Height off floor (in)</label>
     <input type="number" id="shelfElevation" value="0" min="0" step="1">
-    <button class="util-btn" id="btnAddShelves">Add Shelves</button>
-    <p class="hint">Shelves are trailer fixtures, not cargo -- they don't count toward weight, value or floor-use stats. Assign pallets/totes to one with "Place on shelf" below.</p>
+    <button class="util-btn" id="btnAddShelves">Add Shelving Unit</button>
+    <p class="hint">Levels = how many individually assignable shelves this one unit has, stacked top to bottom. Drag a unit in the 3D view to move it -- any cargo assigned to it follows. Units are fixtures, not cargo: they don't count toward weight, value or floor-use stats. Assign pallets/totes to a level with "Place on shelf" below, or remove a unit from the Trailer Fixtures list.</p>
   </div>
 
   <div class="group">
@@ -257,7 +257,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.3.0";
+var APP_VERSION = "2.4.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -273,7 +273,7 @@ var PRESETS = [
   { id: "custom", name: "Custom",          l: 0,   w: 0,   h: 0   }
 ];
 
-var scene, camera, renderer, orbit, dragControls, raycaster, pointer;
+var scene, camera, renderer, orbit, dragControls, fixtureDragControls, raycaster, pointer;
 var state = {
   trailers: [],
   current: -1,
@@ -608,7 +608,7 @@ function switchTrailer() {
     if (t.frame) t.frame.visible = false;
     if (t.floor) t.floor.visible = false;
     (t.truck || []).forEach(function (m) { m.visible = false; });
-    (t.fixtures || []).forEach(function (f) { f.meshes.forEach(function (m) { m.visible = false; }); });
+    (t.fixtures || []).forEach(function (f) { f.hitbox.visible = false; });
   });
 
   state.current = parseInt($("trailerSelect").value, 10);
@@ -621,12 +621,13 @@ function switchTrailer() {
   if (t.frame) t.frame.visible = true;
   if (t.floor) t.floor.visible = true;
   (t.truck || []).forEach(function (m) { m.visible = true; });
-  (t.fixtures || []).forEach(function (f) { f.meshes.forEach(function (m) { m.visible = true; }); });
+  (t.fixtures || []).forEach(function (f) { f.hitbox.visible = true; });
 
   fillTrailerForm(t);
   selectPallet(null);
   refreshShelfOptions();
   updateFixtureList();
+  setupFixtureDragControls();
   orbit.target.set(t.dims.l / 2, 0, t.dims.w / 2);
   orbit.update();
   updateManifest();
@@ -675,33 +676,57 @@ function applyTrailerSettings() {
 
 /* ------------------------------ shelving fixtures ------------------------------ */
 
-/* Shelves are trailer fixtures, not cargo: a rack rendered from posts and
-   boards, tracked in t.fixtures (parallel to t.pallets) and excluded from
-   trailerTotals() by construction, since that only walks t.pallets. */
-function buildShelfMeshes(shelfNumber, l, w, h, pos) {
+/* Shelves are trailer fixtures, not cargo: one draggable "unit" per
+   fixture, holding `count` individually assignable levels stacked inside
+   it. tracked in t.fixtures (parallel to t.pallets) and excluded from
+   trailerTotals() by construction, since that only walks t.pallets.
+
+   The unit is a single hitbox mesh (posts/boards attached as children, so
+   they move with it) -- the same shape drag/clamp code already uses for
+   cargo, so clampToTrailer() and disposeMesh() are reused as-is. The
+   hitbox itself is a faint translucent box: visible (so its children
+   render -- an invisible parent hides its whole subtree) but unobtrusive,
+   and it doubles as a visual outline of the unit's draggable footprint. */
+function computeLevelOffsets(count, totalH) {
+  var arr = [];
+  for (var i = 0; i < count; i++) arr.push(-totalH / 2 + totalH * (i + 0.5) / count);
+  return arr;
+}
+
+function computeLevelLabels(startLabel, count) {
+  var labels = [];
+  var label = startLabel;
+  for (var i = 0; i < count; i++) {
+    labels.push(label);
+    label = nextLabel(label);
+  }
+  return labels;
+}
+
+function buildShelfUnit(levels, l, w, totalH, pos) {
+  var hitboxMat = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.05 });
+  var hitbox = new THREE.Mesh(new THREE.BoxGeometry(l, totalH, w), hitboxMat);
+  hitbox.position.set(pos.x, pos.y, pos.z);
+
   var postMat = new THREE.MeshPhongMaterial({ color: 0x8a8f94 });
   var boardMat = new THREE.MeshPhongMaterial({ color: 0xb08d57 });
-  var labelMat = makeLabelMaterial("Shelf " + shelfNumber, "#d9c39a");
 
   var halfL = Math.max(l / 2 - 2, 1), halfW = Math.max(w / 2 - 2, 1);
-  var postGeom = new THREE.BoxGeometry(4, h, 4);
-  var posts = [
-    [halfL, halfW], [halfL, -halfW], [-halfL, halfW], [-halfL, -halfW]
-  ].map(function (o) {
-    var m = new THREE.Mesh(postGeom, postMat);
-    m.position.set(pos.x + o[0], pos.y + h / 2, pos.z + o[1]);
-    return m;
+  var postGeom = new THREE.BoxGeometry(4, totalH, 4);
+  [[halfL, halfW], [halfL, -halfW], [-halfL, halfW], [-halfL, -halfW]].forEach(function (o) {
+    var post = new THREE.Mesh(postGeom, postMat);
+    post.position.set(o[0], 0, o[1]);
+    hitbox.add(post);
   });
 
-  var levelYs = [h * 0.06, h * 0.5, h * 0.94];
-  var boards = levelYs.map(function (ly, i) {
-    var mat = (i === levelYs.length - 1) ? labelMat : boardMat;
-    var b = new THREE.Mesh(new THREE.BoxGeometry(l, 4, w), mat);
-    b.position.set(pos.x, pos.y + ly, pos.z);
-    return b;
+  var offsets = computeLevelOffsets(levels.length, totalH);
+  offsets.forEach(function (ly, i) {
+    var board = new THREE.Mesh(new THREE.BoxGeometry(l, 4, w), makeLabelMaterial("Shelf " + levels[i], "#d9c39a"));
+    board.position.set(0, ly, 0);
+    hitbox.add(board);
   });
 
-  return posts.concat(boards);
+  return hitbox;
 }
 
 function addShelvesFromForm() {
@@ -709,27 +734,27 @@ function addShelvesFromForm() {
   if (!t) return;
 
   var count = Math.max(1, Math.round(num($("shelfCount").value, 1)));
-  var l = num($("shelfL").value, 36), w = num($("shelfW").value, 18), h = num($("shelfH").value, 72);
-  if (l <= 0 || w <= 0 || h <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
+  var l = num($("shelfL").value, 36), w = num($("shelfW").value, 18), totalH = num($("shelfH").value, 72);
+  if (l <= 0 || w <= 0 || totalH <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
 
   var side = $("shelfSide").value === "right" ? "right" : "left";
   var elevation = num($("shelfElevation").value, 0);
   var z = side === "left" ? (w / 2) : (t.dims.w - w / 2);
-  var spacing = t.dims.l / count;
+  var x = l / 2;
+  var pos = { x: x, y: elevation + totalH / 2, z: z };
 
-  var label = $("shelfStart").value || "1";
-  for (var i = 0; i < count; i++) {
-    var x = Math.min(Math.max(spacing * i + spacing / 2, l / 2), t.dims.l - l / 2);
-    var pos = { x: x, y: elevation, z: z };
-    var meshes = buildShelfMeshes(label, l, w, h, pos);
-    meshes.forEach(function (m) { scene.add(m); });
-    t.fixtures.push({ shelfNumber: label, l: l, w: w, h: h, pos: pos, meshes: meshes });
-    label = nextLabel(label);
-  }
+  var levels = computeLevelLabels($("shelfStart").value || "1", count);
+  var hitbox = buildShelfUnit(levels, l, w, totalH, pos);
+  scene.add(hitbox);
+  var fixture = { levels: levels, l: l, w: w, totalH: totalH, pos: pos, hitbox: hitbox };
+  hitbox.userData = fixture;
+  t.fixtures.push(fixture);
+  clampToTrailer(hitbox);
 
   refreshShelfOptions();
   updateFixtureList();
-  toast(count + " shelf fixture(s) added.", "ok");
+  setupFixtureDragControls();
+  toast("Shelving unit added with " + count + " level(s). Drag it in the 3D view to reposition it.", "ok");
 }
 
 function removeFixture(index) {
@@ -737,29 +762,36 @@ function removeFixture(index) {
   if (!t) return;
   var f = t.fixtures[index];
   if (!f) return;
-  f.meshes.forEach(function (m) {
-    scene.remove(m);
-    if (m.geometry) m.geometry.dispose();
-    disposeMaterial(m.material);
-  });
+  disposeMesh(f.hitbox);
   t.fixtures.splice(index, 1);
   t.pallets.forEach(function (p) {
-    if (p.userData.shelfId === f.shelfNumber) p.userData.shelfId = "";
+    if (f.levels.indexOf(p.userData.shelfId) !== -1) p.userData.shelfId = "";
   });
   refreshShelfOptions();
   updateFixtureList();
   updateManifest();
+  setupFixtureDragControls();
 }
 
 function disposeFixtures(t) {
-  (t.fixtures || []).forEach(function (f) {
-    f.meshes.forEach(function (m) {
-      scene.remove(m);
-      if (m.geometry) m.geometry.dispose();
-      disposeMaterial(m.material);
-    });
-  });
+  (t.fixtures || []).forEach(function (f) { disposeMesh(f.hitbox); });
   t.fixtures = [];
+}
+
+function findShelf(t, shelfId) {
+  var match = null;
+  (t.fixtures || []).forEach(function (f) {
+    var i = f.levels.indexOf(shelfId);
+    if (i !== -1) match = { fixture: f, levelIndex: i };
+  });
+  return match;
+}
+
+function shelfRestPosition(match, itemH) {
+  var f = match.fixture;
+  var offsets = computeLevelOffsets(f.levels.length, f.totalH);
+  var boardTopY = f.pos.y + offsets[match.levelIndex] + 2;
+  return { x: f.pos.x, y: boardTopY + itemH / 2, z: f.pos.z };
 }
 
 function refreshShelfOptions() {
@@ -771,10 +803,12 @@ function refreshShelfOptions() {
   sel.appendChild(noneOpt);
   var t = currentTrailer();
   (t ? t.fixtures : []).forEach(function (f) {
-    var o = document.createElement("option");
-    o.value = f.shelfNumber;
-    o.textContent = "Shelf " + f.shelfNumber;
-    sel.appendChild(o);
+    f.levels.forEach(function (label) {
+      var o = document.createElement("option");
+      o.value = label;
+      o.textContent = "Shelf " + label;
+      sel.appendChild(o);
+    });
   });
   if ([].slice.call(sel.options).some(function (o) { return o.value === current; })) sel.value = current;
 }
@@ -795,11 +829,11 @@ function updateFixtureList() {
     div.className = "manifest-item";
 
     var title = document.createElement("b");
-    title.textContent = "Shelf " + f.shelfNumber;
+    title.textContent = "Unit: Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "");
 
     var meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = f.l + " x " + f.w + " x " + f.h + " in";
+    meta.textContent = f.levels.length + " level(s)  |  " + f.l + " x " + f.w + " x " + f.totalH + " in";
 
     var del = document.createElement("button");
     del.className = "warn-btn";
@@ -848,25 +882,28 @@ function normalizePallet(d) {
 /* Decorative child meshes only -- the parent box stays the single hitbox
    used for drag/clamp/collision, so its geometry.parameters never change
    shape because of these. Object3D.add() with no supporting scene graph
-   (as in the headless test stub) is a safe no-op. */
+   (as in the headless test stub) is a safe no-op.
+   Every decoration is sized to sit flush inside the parent's exact l x w
+   footprint (never larger) so nothing can poke through a trailer wall or
+   another pallet when the parent box itself is correctly clamped/resolved. */
 function addCargoDecoration(mesh, d) {
   if (d.itemType === "pallet") {
     var deckMat = new THREE.MeshPhongMaterial({ color: 0xa9773f });
     var deckH = Math.max(4, d.h * 0.08);
-    var deck = new THREE.Mesh(new THREE.BoxGeometry(d.l + 4, deckH, d.w + 4), deckMat);
+    var deck = new THREE.Mesh(new THREE.BoxGeometry(d.l, deckH, d.w), deckMat);
     deck.position.set(0, -d.h / 2 + deckH / 2, 0);
     mesh.add(deck);
 
     var loadMat = new THREE.MeshPhongMaterial({ color: 0xd8c9a3 });
-    var lw = d.l * 0.42, lh = d.h * 0.4, ld = d.w * 0.42;
-    [[-d.l * 0.2, d.w * 0.18], [d.l * 0.18, -d.w * 0.15]].forEach(function (o) {
+    var lw = d.l * 0.4, lh = d.h * 0.4, ld = d.w * 0.4;
+    [[-d.l * 0.18, d.w * 0.15], [d.l * 0.18, -d.w * 0.15]].forEach(function (o) {
       var box = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), loadMat);
       box.position.set(o[0], d.h / 2 - lh / 2 + deckH, o[1]);
       mesh.add(box);
     });
   } else if (d.itemType === "tote") {
     var lipMat = new THREE.MeshPhongMaterial({ color: 0x2c3e50 });
-    var lip = new THREE.Mesh(new THREE.BoxGeometry(d.l + 2, Math.max(3, d.h * 0.08), d.w + 2), lipMat);
+    var lip = new THREE.Mesh(new THREE.BoxGeometry(d.l, Math.max(3, d.h * 0.08), d.w), lipMat);
     lip.position.set(0, d.h / 2, 0);
     mesh.add(lip);
   }
@@ -904,14 +941,6 @@ function addPallet(data) {
   updateManifest();
   setupDragControls();
   return mesh;
-}
-
-function findShelf(t, shelfId) {
-  return (t.fixtures || []).filter(function (f) { return f.shelfNumber === shelfId; })[0] || null;
-}
-
-function shelfRestPosition(f, itemH) {
-  return { x: f.pos.x, y: f.pos.y + f.h * 0.94 + 2 + itemH / 2, z: f.pos.z };
 }
 
 function addPalletFromForm() {
@@ -1120,6 +1149,7 @@ function toggleDelete() {
   b.classList.toggle("active", state.deleteMode);
   b.textContent = "Delete mode: " + (state.deleteMode ? "ON - click a pallet" : "off");
   if (dragControls) dragControls.enabled = !state.deleteMode;
+  if (fixtureDragControls) fixtureDragControls.enabled = !state.deleteMode;
 }
 
 /* Panels collapse to zero width. The handles sit in the canvas area, so a
@@ -1170,6 +1200,35 @@ function setupDragControls() {
 
   renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+}
+
+/* Shelving units drag independently of cargo -- their own DragControls
+   instance over just the fixture hitboxes, reusing clampToTrailer() since
+   a unit's hitbox is a plain box positioned/sized the same way cargo is.
+   Any cargo assigned to one of the unit's levels is re-snapped to follow it. */
+function setupFixtureDragControls() {
+  var t = currentTrailer();
+  if (!t) return;
+  if (fixtureDragControls) fixtureDragControls.dispose();
+  var hitboxes = t.fixtures.map(function (f) { return f.hitbox; });
+  fixtureDragControls = new THREE.DragControls(hitboxes, camera, renderer.domElement);
+  fixtureDragControls.enabled = !state.deleteMode;
+  fixtureDragControls.addEventListener("dragstart", function () { orbit.enabled = false; });
+  fixtureDragControls.addEventListener("drag", function (e) { clampToTrailer(e.object); });
+  fixtureDragControls.addEventListener("dragend", function (e) {
+    orbit.enabled = true;
+    syncPosition(e.object);
+    var f = e.object.userData;
+    t.pallets.forEach(function (p) {
+      var levelIndex = f.levels.indexOf(p.userData.shelfId);
+      if (levelIndex === -1) return;
+      var rest = shelfRestPosition({ fixture: f, levelIndex: levelIndex }, p.userData.h);
+      p.position.set(rest.x, rest.y, rest.z);
+      clampToTrailer(p);
+      resolveCollisions(p);
+    });
+    updateManifest();
+  });
 }
 
 function onCanvasPointerDown(ev) {
@@ -1463,7 +1522,7 @@ function serialize() {
           };
         }),
         fixtures: t.fixtures.map(function (f) {
-          return { shelfNumber: f.shelfNumber, l: f.l, w: f.w, h: f.h, pos: f.pos };
+          return { levels: f.levels, l: f.l, w: f.w, totalH: f.totalH, pos: f.pos };
         })
       };
     })
@@ -1538,12 +1597,14 @@ function loadProject(e) {
         t.pallets.push(mesh);
       });
       (td.fixtures || []).forEach(function (fd) {
-        var shelfNumber = String(fd.shelfNumber || "1");
-        var fl = num(fd.l, 36), fw = num(fd.w, 18), fh = num(fd.h, 72);
+        var levels = Array.isArray(fd.levels) && fd.levels.length ? fd.levels.map(String) : [String(fd.shelfNumber || "1")];
+        var fl = num(fd.l, 36), fw = num(fd.w, 18), fTotalH = num(fd.totalH != null ? fd.totalH : fd.h, 72);
         var fpos = fd.pos || { x: 0, y: 0, z: 0 };
-        var meshes = buildShelfMeshes(shelfNumber, fl, fw, fh, fpos);
-        meshes.forEach(function (m) { scene.add(m); });
-        t.fixtures.push({ shelfNumber: shelfNumber, l: fl, w: fw, h: fh, pos: fpos, meshes: meshes });
+        var hitbox = buildShelfUnit(levels, fl, fw, fTotalH, fpos);
+        scene.add(hitbox);
+        var fixture = { levels: levels, l: fl, w: fw, totalH: fTotalH, pos: fpos, hitbox: hitbox };
+        hitbox.userData = fixture;
+        t.fixtures.push(fixture);
       });
     });
 
@@ -1567,6 +1628,7 @@ function clearAll() {
   state.current = -1;
   state.selected = null;
   if (dragControls) { dragControls.dispose(); dragControls = null; }
+  if (fixtureDragControls) { fixtureDragControls.dispose(); fixtureDragControls = null; }
   $("trailerSelect").innerHTML = "";
 }
 

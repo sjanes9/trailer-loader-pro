@@ -316,40 +316,69 @@ test("removing a trailer disposes its cargo and keeps at least one trailer", () 
   eq(win.state.trailers.length, 1, "last trailer must not be removable");
 });
 
-test("bulk-adding shelves creates numbered fixtures excluded from cargo totals", () => {
+test("adding a shelving unit creates one fixture with numbered levels, excluded from cargo totals", () => {
   const win = boot();
   const d = win.document;
   d.getElementById("shelfCount").value = "3";
   win.addShelvesFromForm();
   const t = win.state.trailers[0];
-  eq(t.fixtures.length, 3, "three fixtures created");
-  eq(t.fixtures.map(f => f.shelfNumber).join(","), "1,2,3", "shelf numbers auto-increment from Start #");
+  eq(t.fixtures.length, 1, "one shelving unit created, not one per level");
+  eq(t.fixtures[0].levels.join(","), "1,2,3", "unit has 3 numbered levels, auto-incrementing from Start #");
 
   win.addPalletFromForm();
   const tot = win.trailerTotals(t);
-  eq(tot.count, 1, "fixtures are not counted as cargo pieces");
-  eq(tot.weight, win.document.getElementById("Weight").value * 1, "fixtures do not contribute weight");
+  eq(tot.count, 1, "the shelving unit is not counted as a cargo piece");
+  eq(tot.weight, win.document.getElementById("Weight").value * 1, "the shelving unit does not contribute weight");
 });
 
-test("assigning a pallet to a shelf positions it on that shelf, not the floor", () => {
+test("levels within one unit stack top to bottom, each independently assignable", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfCount").value = "3";
+  win.addShelvesFromForm();
+  const shelf = win.state.trailers[0].fixtures[0];
+
+  d.getElementById("L").value = "10";
+  d.getElementById("W").value = "10";
+  d.getElementById("H").value = "10";
+  d.getElementById("cargoShelfId").value = "1";
+  win.addPalletFromForm();
+  d.getElementById("cargoShelfId").value = "3";
+  win.addPalletFromForm();
+
+  const [bottomItem, topItem] = win.state.trailers[0].pallets;
+  eq(bottomItem.userData.shelfId, "1", "first item assigned to level 1");
+  eq(topItem.userData.shelfId, "3", "second item assigned to level 3");
+  eq(bottomItem.position.x, shelf.pos.x, "x lines up with the unit");
+  eq(bottomItem.position.z, shelf.pos.z, "z lines up with the unit");
+  assert(topItem.position.y > bottomItem.position.y, "level 3 sits higher than level 1 within the same unit");
+});
+
+test("dragging a shelving unit brings its assigned cargo along", () => {
   const win = boot();
   const d = win.document;
   win.addShelvesFromForm();
   const shelf = win.state.trailers[0].fixtures[0];
+  const originalShelfX = shelf.pos.x;
 
-  d.getElementById("cargoShelfId").value = "1";
+  d.getElementById("L").value = "10";
   d.getElementById("W").value = "10";
   d.getElementById("H").value = "10";
+  d.getElementById("cargoShelfId").value = shelf.levels[0];
   win.addPalletFromForm();
-
   const p = win.state.trailers[0].pallets[0];
-  eq(p.userData.shelfId, "1", "shelfId recorded on the cargo item");
-  eq(p.position.x, shelf.pos.x, "cargo x lines up with the shelf");
-  eq(p.position.z, shelf.pos.z, "cargo z lines up with the shelf");
-  assert(p.position.y > shelf.pos.y + shelf.h * 0.9, "cargo rests at/above the shelf's top level, not the floor");
+  const originalCargoX = p.position.x;
+  eq(originalCargoX, originalShelfX, "cargo starts lined up with the unit");
+
+  shelf.hitbox.position.x += 100;
+  win.fixtureDragControls.fire("dragend", { object: shelf.hitbox });
+
+  eq(shelf.pos.x, originalShelfX + 100, "moving the unit updates its recorded position");
+  eq(p.position.x, shelf.pos.x, "assigned cargo re-snaps to the unit's new position");
+  assert(p.position.x !== originalCargoX, "cargo actually moved, not left behind");
 });
 
-test("removing a shelf fixture clears the assignment on cargo that referenced it", () => {
+test("removing a shelving unit clears the assignment on cargo that referenced it", () => {
   const win = boot();
   const d = win.document;
   win.addShelvesFromForm();
