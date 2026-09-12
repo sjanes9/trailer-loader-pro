@@ -194,7 +194,17 @@
       <div><label>Weight lb</label><input type="number" id="Weight" value="1500" min="0" step="1"></div>
       <div><label>Value $</label><input type="number" id="Value" value="5000" min="0" step="1"></div>
     </div>
-    <label>Photo</label><input type="file" id="palletImg" accept="image/*">
+    <label>Photo</label>
+    <div class="row">
+      <div><button type="button" class="util-btn" id="btnTakePhoto">Take Photo</button></div>
+      <div><button type="button" class="util-btn" id="btnChoosePhoto">Choose Photo</button></div>
+    </div>
+    <input type="file" id="palletImg" accept="image/*" style="display:none">
+    <input type="file" id="palletImgCapture" accept="image/*" capture="environment" style="display:none">
+    <div id="photoPreviewWrap" style="display:none; margin-bottom:8px;">
+      <img id="photoPreview" class="pallet-thumb" alt="Selected photo">
+      <button type="button" class="warn-btn" id="btnClearPhoto">Remove photo</button>
+    </div>
     <label>Notes</label><textarea id="Notes" rows="2" placeholder="Handling notes, PO number, contents..."></textarea>
     <button id="btnAdd">Add to trailer</button>
     <button class="update-btn" id="btnUpdate">Update selection</button>
@@ -257,7 +267,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.4.0";
+var APP_VERSION = "2.5.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -281,6 +291,7 @@ var state = {
   deleteMode: false,
   shipment: {}
 };
+var pendingPhotoRemoval = false;
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -422,6 +433,12 @@ function wireUI() {
   $("btnDelTrailer").onclick = removeTrailer;
 
   $("btnAddShelves").onclick = addShelvesFromForm;
+
+  $("btnTakePhoto").onclick = function () { $("palletImgCapture").click(); };
+  $("btnChoosePhoto").onclick = function () { $("palletImg").click(); };
+  $("palletImg").onchange = onPhotoFileChosen;
+  $("palletImgCapture").onchange = onPhotoFileChosen;
+  $("btnClearPhoto").onclick = clearPhotoSelection;
 
   $("btnAdd").onclick = function () { addPalletFromForm(); };
   $("btnUpdate").onclick = updatePallet;
@@ -848,6 +865,53 @@ function updateFixtureList() {
   });
 }
 
+/* ------------------------------ photo capture ------------------------------ */
+
+/* Two hidden file inputs share one "Photo" control: #palletImgCapture uses
+   capture="environment" to open the device camera directly on mobile,
+   #palletImg has no capture attribute so it opens the photo library/file
+   picker. Whichever one actually received a file wins. */
+function pickedPhotoFile() {
+  return ($("palletImg").files && $("palletImg").files[0]) ||
+         ($("palletImgCapture").files && $("palletImgCapture").files[0]) || null;
+}
+
+function clearPhotoInputs() {
+  $("palletImg").value = "";
+  $("palletImgCapture").value = "";
+}
+
+function onPhotoFileChosen() {
+  pendingPhotoRemoval = false;
+  var file = pickedPhotoFile();
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function (e) {
+    $("photoPreview").src = String(e.target.result || "");
+    $("photoPreviewWrap").style.display = "block";
+  };
+  fr.readAsDataURL(file);
+}
+
+function clearPhotoSelection() {
+  clearPhotoInputs();
+  $("photoPreview").src = "";
+  $("photoPreviewWrap").style.display = "none";
+  pendingPhotoRemoval = true;
+}
+
+function showExistingPhoto(img) {
+  pendingPhotoRemoval = false;
+  clearPhotoInputs();
+  if (img) {
+    $("photoPreview").src = img;
+    $("photoPreviewWrap").style.display = "block";
+  } else {
+    $("photoPreview").src = "";
+    $("photoPreviewWrap").style.display = "none";
+  }
+}
+
 /* ------------------------------ pallets ------------------------------ */
 
 function makeLabelMaterial(text, bgColor) {
@@ -967,8 +1031,7 @@ function addPalletFromForm() {
 
   warnIfOversize(d, t);
 
-  var fileInput = $("palletImg");
-  var file = fileInput.files && fileInput.files[0];
+  var file = pickedPhotoFile();
 
   // Lesson learned: encode the image at load time, never from a buffer held
   // across an async boundary that may already have been invalidated.
@@ -976,12 +1039,12 @@ function addPalletFromForm() {
     var fr = new FileReader();
     fr.onload = function (e) {
       d.img = String(e.target.result || "");
-      fileInput.value = "";
+      clearPhotoInputs();
       finishAdd(d);
     };
     fr.onerror = function () {
       toast("Photo could not be read. Pallet added without an image.", "err");
-      fileInput.value = "";
+      clearPhotoInputs();
       finishAdd(d);
     };
     fr.readAsDataURL(file);
@@ -1043,11 +1106,14 @@ function updatePallet() {
   }
   if (sizeChanged || typeChanged) refreshCargoDecoration(p);
 
-  var file = $("palletImg").files && $("palletImg").files[0];
+  var file = pickedPhotoFile();
   if (file) {
     var fr = new FileReader();
-    fr.onload = function (e) { d.img = String(e.target.result || ""); $("palletImg").value = ""; updateManifest(); };
+    fr.onload = function (e) { d.img = String(e.target.result || ""); clearPhotoInputs(); updateManifest(); };
     fr.readAsDataURL(file);
+  } else if (pendingPhotoRemoval) {
+    d.img = "";
+    pendingPhotoRemoval = false;
   }
 
   if (t && shelfChanged && newShelfId) {
@@ -1135,6 +1201,7 @@ function fillSidebarForm(d) {
   $("Weight").value = d.weight;
   $("Value").value = d.value;
   $("Notes").value = d.notes || "";
+  showExistingPhoto(d.img || "");
 }
 
 function updateSelectionUI() {

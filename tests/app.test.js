@@ -266,6 +266,37 @@ test("save/load round trip preserves trailers, pallets and shipment data", () =>
   assert(migrated === snap, "current-format file should pass through migrate unchanged");
 });
 
+test("selecting a cargo item without a photo hides the photo preview", () => {
+  const win = boot();
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  win.selectPallet(p);
+  eq(win.document.getElementById("photoPreviewWrap").style.display, "none", "no photo, no preview shown");
+});
+
+test("selecting a cargo item with a photo shows it, and removing it clears it on update", () => {
+  const win = boot();
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  p.userData.img = "data:image/png;base64,AAAA";
+  win.selectPallet(p);
+  eq(win.document.getElementById("photoPreviewWrap").style.display, "block", "existing photo shown in preview");
+  eq(win.document.getElementById("photoPreview").src, p.userData.img, "preview src matches the stored photo");
+
+  win.clearPhotoSelection();
+  eq(win.document.getElementById("photoPreviewWrap").style.display, "none", "preview hidden immediately after Remove photo");
+
+  win.updatePallet();
+  eq(p.userData.img, "", "photo cleared from the cargo item on update, with no new file chosen");
+});
+
+test("pickedPhotoFile() prefers a chosen library file over a captured one", () => {
+  const win = boot();
+  const file = new win.File(["x"], "lib.png", { type: "image/png" });
+  Object.defineProperty(win.document.getElementById("palletImg"), "files", { value: [file], configurable: true });
+  eq(win.pickedPhotoFile().name, "lib.png", "returns the file present on #palletImg");
+});
+
 test("v1 layout files migrate instead of failing to open", () => {
   const win = boot();
   const legacy = { s: { ref: "OLD-1" }, t: [{ d: { l: 636, w: 102, h: 110 }, p: [{ label: "A", l: 48, w: 40, h: 48, weight: "900", value: "100", pos: { x: 30, y: 24, z: 20 } }] }] };

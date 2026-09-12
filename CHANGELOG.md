@@ -2,6 +2,17 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.5.0] - 2026-09-12
+
+### Added
+
+- The cargo Photo field is now two explicit buttons, **Take Photo** and
+  **Choose Photo**, so mobile users get the device camera directly instead
+  of relying on the browser's own file-picker sheet. Whichever one is used,
+  a live preview appears immediately with a **Remove photo** option that
+  clears the image (including from an already-added item, on Update).
+  Selecting an existing cargo item now shows its current photo, if any.
+
 ## [2.4.0] - 2026-09-12
 
 ### Fixed
