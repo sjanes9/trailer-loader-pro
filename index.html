@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailer Loader Pro</title>
+<style>
+  :root {
+    --bg: #1a1a1a; --panel: #ffffff; --panel2: #f1f1f1; --line: #d6d6d6;
+    --green: #28a745; --blue: #007bff; --purple: #9b59b6; --slate: #2c3e50;
+    --red: #dc3545; --orange: #e67e22; --grey: #6c757d;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Tahoma, sans-serif; display:flex; overflow:hidden; background:var(--bg); }
+  #sidebar { width:310px; flex:0 0 310px; padding:16px; background:var(--panel); height:100vh; box-shadow:5px 0 15px rgba(0,0,0,.3); z-index:100; overflow-y:auto; transition:flex-basis .22s ease, width .22s ease, padding .22s ease; }
+  #sidebar.collapsed { width:0; flex-basis:0; padding-left:0; padding-right:0; overflow:hidden; }
+  #container { flex:1 1 auto; height:100vh; background:#000; position:relative; min-width:0; }
+  #manifestSide { width:300px; flex:0 0 300px; background:var(--panel2); border-left:1px solid #ccc; height:100vh; transition:flex-basis .22s ease, width .22s ease; overflow-y:auto; position:relative; }
+  #manifestSide.collapsed { width:0; flex-basis:0; overflow:hidden; }
+  /* Handles live inside the canvas area, never inside the panels they control,
+     so a collapsed panel can always be reopened. */
+  .panel-toggle { position:absolute; top:12px; width:30px; height:44px; background:var(--blue); color:#fff;
+                  border:none; cursor:pointer; font-weight:bold; font-size:15px; line-height:44px; padding:0;
+                  margin:0; z-index:60; opacity:.82; }
+  .panel-toggle:hover { opacity:1; }
+  #sidebarToggle { left:0; border-radius:0 5px 5px 0; }
+  #manifestToggle { right:0; border-radius:5px 0 0 5px; }
+  h2, h3 { color:#333; border-bottom:2px solid var(--green); padding-bottom:8px; margin-top:0; }
+  h2 { font-size:18px; } h3 { font-size:15px; }
+  .ver { float:right; font-size:10px; color:#888; font-weight:normal; border:0; }
+  .group { background:#f8f9fa; padding:12px; border-radius:8px; margin-bottom:12px; border:1px solid #ddd; }
+  label { display:block; font-weight:bold; font-size:10px; margin-bottom:3px; color:#555; text-transform:uppercase; letter-spacing:.3px; }
+  input, select, textarea { width:100%; padding:7px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; font-family:inherit; font-size:13px; }
+  input[type=checkbox] { width:auto; margin:0 4px 0 0; }
+  button { width:100%; padding:10px; cursor:pointer; background:var(--green); color:#fff; border:none; font-weight:bold; border-radius:4px; margin-bottom:6px; font-size:13px; }
+  button:hover { filter:brightness(1.08); }
+  .util-btn { background:var(--blue); } .update-btn { background:var(--purple); }
+  .save-btn { background:var(--slate); } .warn-btn { background:var(--red); }
+  .row { display:flex; gap:6px; } .row > div { flex:1 1 0; min-width:0; }
+  .hint { font-size:10px; color:#777; margin:-4px 0 8px; line-height:1.35; }
+  #delToggle.active { background:var(--red) !important; }
+  .total-box { background:var(--green); color:#fff; padding:8px 10px; margin:0 0 6px; border-radius:4px; font-weight:bold; text-align:center; font-size:13px; }
+  .stat { background:#fff; border:1px solid var(--line); border-radius:4px; padding:6px 8px; margin-bottom:6px; font-size:11px; display:flex; justify-content:space-between; gap:8px; }
+  .stat b { font-weight:700; }
+  .stat.alert { background:#fdecea; border-color:var(--red); color:#8b1a1a; }
+  .manifest-item { background:#fff; border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:4px; padding:8px; margin-bottom:6px; font-size:12px; cursor:pointer; }
+  .manifest-item:hover { background:#eef5ff; }
+  .manifest-item.sel { border-left-color:var(--orange); background:#fff6ec; }
+  .manifest-item .meta { color:#666; font-size:11px; } .manifest-item .note { color:#888; font-style:italic; font-size:11px; }
+  .pallet-thumb { width:100%; height:56px; object-fit:cover; border-radius:4px; margin-top:6px; border:1px solid #ddd; }
+  #bolModal { display:none; position:fixed; z-index:1000; inset:0; background:rgba(0,0,0,.8); }
+  .modal-content { background:#fff; margin:2% auto; padding:20px; width:90%; max-width:900px; border-radius:8px; max-height:92vh; overflow-y:auto; }
+  .bol-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; border:1px solid #333; padding:12px; }
+  .bol-section { border:1px solid #ccc; padding:10px; }
+  .bol-header { background:#343a40; color:#fff; padding:5px; font-size:11px; font-weight:bold; margin-bottom:10px; }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 18px; border-radius:6px; font-size:13px; z-index:2000; display:none; max-width:70%; }
+  #toast.err { background:#8b1a1a; } #toast.ok { background:#1d6b33; }
+  #bootError { display:none; position:fixed; inset:0; background:#1a1a1a; color:#f1f1f1; z-index:3000; padding:40px; font-family:monospace; font-size:14px; line-height:1.6; }
+  @media (max-width:900px) { #sidebar { flex-basis:270px; width:270px; } #manifestSide { flex-basis:250px; width:250px; } }
+</style>
+</head>
+<body>
+
+<div id="bootError">
+  <h2 style="color:#ff6b6b;border:0">3D libraries did not load</h2>
+  <p>Trailer Loader Pro loads three.js and jsPDF from a CDN. One or both did not arrive.</p>
+  <p>Check the network connection, any content blocker, or corporate proxy, then reload. See the README section "Offline and air-gapped use" for how to vendor the libraries locally.</p>
+</div>
+
+<div id="bolModal">
+  <div class="modal-content">
+    <h3>Shipment / BOL Header</h3>
+    <div class="bol-grid">
+      <div class="bol-section">
+        <div class="bol-header">GENERAL INFO</div>
+        <label>Date</label><input type="date" id="bolDate">
+        <label>BOL Reference #</label><input type="text" id="bolRef">
+      </div>
+      <div class="bol-section">
+        <div class="bol-header">CARRIER INFO</div>
+        <label>Carrier</label><input type="text" id="bolCarrier">
+        <label>Trailer #</label><input type="text" id="bolTrailerNum">
+        <label>Seal #</label><input type="text" id="bolSeal">
+      </div>
+      <div class="bol-section">
+        <div class="bol-header">SHIP FROM</div>
+        <input type="text" id="fromContact" placeholder="Contact name">
+        <input type="text" id="fromAddr" placeholder="Address">
+        <input type="text" id="fromCSZ" placeholder="City, State, ZIP">
+        <label>Special instructions (from)</label>
+        <textarea id="bolSpecialFrom" rows="2"></textarea>
+      </div>
+      <div class="bol-section">
+        <div class="bol-header">SHIP TO</div>
+        <input type="text" id="toContact" placeholder="Contact name">
+        <input type="text" id="toAddr" placeholder="Address">
+        <input type="text" id="toCSZ" placeholder="City, State, ZIP">
+        <label>Special instructions (to)</label>
+        <textarea id="bolSpecialTo" rows="2"></textarea>
+      </div>
+      <div class="bol-section" style="grid-column:span 2">
+        <div class="bol-header">THIRD PARTY BILLING</div>
+        <div style="display:flex; gap:18px; margin-bottom:10px">
+          <label style="display:inline;text-transform:none"><input type="checkbox" id="billPrepaid"> Prepaid</label>
+          <label style="display:inline;text-transform:none"><input type="checkbox" id="billCollect"> Collect</label>
+          <label style="display:inline;text-transform:none"><input type="checkbox" id="billOther"> Other</label>
+        </div>
+        <input type="text" id="billAddr" placeholder="Billing address">
+        <input type="text" id="billCSZ" placeholder="City, State, ZIP">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div><button id="bolSaveBtn">Save header data</button></div>
+      <div><button id="bolCancelBtn" class="save-btn" style="background:var(--grey)">Cancel</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="sidebar">
+  <h2>Trailer Loader Pro <span class="ver" id="verLabel"></span></h2>
+
+  <div class="group">
+    <button class="save-btn" id="btnSave">Save layout</button>
+    <button class="save-btn" style="background:#16a085" id="btnLoad">Load layout</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none">
+    <button class="util-btn" id="btnBOL">Edit BOL header</button>
+    <button class="util-btn" style="background:var(--orange)" id="btnPDF">Export PDF BOL</button>
+  </div>
+
+  <div class="group">
+    <h3>Trailer</h3>
+    <label>Active trailer</label>
+    <select id="trailerSelect"></select>
+    <label>Name</label>
+    <input type="text" id="trailerName" placeholder="Trailer 1">
+    <label>Preset (nominal interior)</label>
+    <select id="trailerPreset"></select>
+    <div class="row">
+      <div><label>Len in</label><input type="number" id="tL" min="1" step="1"></div>
+      <div><label>Wid in</label><input type="number" id="tW" min="1" step="1"></div>
+      <div><label>Hgt in</label><input type="number" id="tH" min="1" step="1"></div>
+    </div>
+    <label>Max payload (lb)</label>
+    <input type="number" id="tMaxWeight" min="0" step="100" value="45000">
+    <p class="hint">Preset dimensions are nominal starting points only. Confirm against the actual trailer or container before committing a load plan.</p>
+    <button class="update-btn" id="btnApplyTrailer">Apply trailer settings</button>
+    <div class="row">
+      <div><button class="util-btn" id="btnNewTrailer">+ New</button></div>
+      <div><button class="warn-btn" id="btnDelTrailer">Remove</button></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Pallet</h3>
+    <label>Label</label>
+    <input type="text" id="label" value="P-1">
+    <div class="row">
+      <div><label>Len in</label><input type="number" id="L" value="48" min="1" step="1"></div>
+      <div><label>Wid in</label><input type="number" id="W" value="40" min="1" step="1"></div>
+      <div><label>Hgt in</label><input type="number" id="H" value="48" min="1" step="1"></div>
+    </div>
+    <div class="row">
+      <div><label>Weight lb</label><input type="number" id="Weight" value="1500" min="0" step="1"></div>
+      <div><label>Value $</label><input type="number" id="Value" value="5000" min="0" step="1"></div>
+    </div>
+    <label>Photo</label><input type="file" id="palletImg" accept="image/*">
+    <label>Notes</label><textarea id="Notes" rows="2" placeholder="Handling notes, PO number, contents..."></textarea>
+    <button id="btnAdd">Add to trailer</button>
+    <button class="update-btn" id="btnUpdate">Update selection</button>
+  </div>
+
+  <div class="group">
+    <h3>Selection</h3>
+    <div id="selectionNotice" style="font-size:11px; font-weight:bold; color:#d35400; margin-bottom:8px;">No selection</div>
+    <div class="row">
+      <div><button class="util-btn" id="btnRotate">Rotate 90</button></div>
+      <div><button class="util-btn" id="btnDuplicate">Duplicate</button></div>
+    </div>
+    <button class="warn-btn" id="btnDeleteSel">Delete selected</button>
+    <button id="delToggle" class="util-btn" style="background:var(--grey)">Delete mode: off</button>
+    <p class="hint">Drag a pallet to place it. Keyboard: R rotates, D duplicates, Delete removes the selection. Use [ and ] to hide or show the side panels.</p>
+  </div>
+</div>
+
+<div id="container">
+  <button id="sidebarToggle" class="panel-toggle" title="Hide/show the controls panel (key: [ )">&#171;</button>
+  <button id="manifestToggle" class="panel-toggle" title="Hide/show the cargo manifest (key: ] )">&#187;</button>
+</div>
+
+<div id="manifestSide">
+  <div style="padding:18px">
+    <h3>Cargo Manifest</h3>
+    <div id="totalWeightDisplay" class="total-box">Weight: 0 lb</div>
+    <div id="totalValueDisplay" class="total-box" style="background:#2980b9">Value: $0</div>
+    <div id="statPieces" class="stat"><span>Pieces</span><b>0</b></div>
+    <div id="statFloor" class="stat"><span>Floor use</span><b>0%</b></div>
+    <div id="statCgLong" class="stat"><span>CG from nose</span><b>n/a</b></div>
+    <div id="statCgLat" class="stat"><span>Lateral offset</span><b>n/a</b></div>
+    <div id="statPayload" class="stat"><span>Payload used</span><b>0%</b></div>
+    <p class="hint">Center of gravity is a planning aid computed from entered pallet weights and positions. It is not an axle-weight calculation and does not replace certified scale tickets.</p>
+    <div id="manifestList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/DragControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * Trailer Loader Pro
+ * Single-file, vanilla JS, no build step. See CHANGELOG.md.
+ * ------------------------------------------------------------------ */
+
+var APP_VERSION = "2.1.0";
+var SAVE_FORMAT = "trailer-loader-pro";
+var SAVE_VERSION = 2;
+
+/* Nominal interior dimensions in inches. Starting points, not spec values. */
+var PRESETS = [
+  { id: "van53",  name: "53 ft dry van",   l: 636, w: 102, h: 110 },
+  { id: "van48",  name: "48 ft dry van",   l: 576, w: 102, h: 110 },
+  { id: "cont40", name: "40 ft container", l: 474, w: 92,  h: 94  },
+  { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94  },
+  { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102 },
+  { id: "custom", name: "Custom",          l: 0,   w: 0,   h: 0   }
+];
+
+var scene, camera, renderer, orbit, dragControls, raycaster, pointer;
+var state = {
+  trailers: [],
+  current: -1,
+  selected: null,
+  deleteMode: false,
+  shipment: {}
+};
+
+/* ------------------------------ helpers ------------------------------ */
+
+function $(id) { return document.getElementById(id); }
+
+function num(v, fallback) {
+  var n = parseFloat(v);
+  return isFinite(n) ? n : (fallback || 0);
+}
+
+function toast(msg, kind) {
+  var t = $("toast");
+  t.textContent = msg;
+  t.className = kind || "";
+  t.style.display = "block";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.style.display = "none"; }, 3200);
+}
+
+function currentTrailer() {
+  return state.trailers[state.current] || null;
+}
+
+function imageFormat(dataUrl) {
+  var m = /^data:image\/([a-z+]+);/i.exec(dataUrl || "");
+  if (!m) return "PNG";
+  var f = m[1].toUpperCase();
+  return f === "JPG" ? "JPEG" : f;
+}
+
+function randomColor() {
+  return "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
+}
+
+/* ------------------------------ boot ------------------------------ */
+
+function librariesReady() {
+  return typeof THREE !== "undefined" &&
+         typeof THREE.OrbitControls === "function" &&
+         typeof THREE.DragControls === "function";
+}
+
+function init() {
+  $("verLabel").textContent = "v" + APP_VERSION;
+
+  if (!librariesReady()) {
+    $("bootError").style.display = "block";
+    return;
+  }
+
+  var container = $("container");
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a1a);
+
+  camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 8000);
+  camera.position.set(1000, 800, 1000);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.appendChild(renderer.domElement);
+
+  orbit = new THREE.OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+  var dir = new THREE.DirectionalLight(0xffffff, 0.5);
+  dir.position.set(1, 2, 1);
+  scene.add(dir);
+
+  raycaster = new THREE.Raycaster();
+  pointer = new THREE.Vector2();
+
+  buildPresetOptions();
+  wireUI();
+  refreshPanelHandles();
+  if (window.innerWidth < 900) setPanel("manifestSide", true);
+  addNewTrailer();
+  window.addEventListener("resize", onResize);
+  onResize();
+  animate();
+}
+
+function buildPresetOptions() {
+  var sel = $("trailerPreset");
+  sel.innerHTML = "";
+  PRESETS.forEach(function (p) {
+    var o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.id === "custom" ? p.name : p.name + " (" + p.l + " x " + p.w + " x " + p.h + ")";
+    sel.appendChild(o);
+  });
+}
+
+function wireUI() {
+  $("btnSave").onclick = saveProject;
+  $("btnLoad").onclick = function () { $("fileInput").click(); };
+  $("fileInput").onchange = loadProject;
+  $("btnBOL").onclick = openBOL;
+  $("btnPDF").onclick = generatePDF;
+
+  $("trailerSelect").onchange = switchTrailer;
+  $("trailerPreset").onchange = onPresetChange;
+  $("btnApplyTrailer").onclick = applyTrailerSettings;
+  $("btnNewTrailer").onclick = function () { addNewTrailer(); };
+  $("btnDelTrailer").onclick = removeTrailer;
+
+  $("btnAdd").onclick = function () { addPalletFromForm(); };
+  $("btnUpdate").onclick = updatePallet;
+  $("btnRotate").onclick = rotatePallet;
+  $("btnDuplicate").onclick = duplicatePallet;
+  $("btnDeleteSel").onclick = function () { removePallet(state.selected); };
+  $("delToggle").onclick = toggleDelete;
+
+  $("sidebarToggle").onclick = toggleSidebar;
+  $("manifestToggle").onclick = toggleManifest;
+  $("bolSaveBtn").onclick = saveBOL;
+  $("bolCancelBtn").onclick = function () { $("bolModal").style.display = "none"; };
+
+  document.addEventListener("keydown", onKeyDown);
+}
+
+function onResize() {
+  if (!renderer) return;
+  var c = $("container");
+  var w = c.clientWidth, h = c.clientHeight;
+  if (w === 0 || h === 0) return;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+function onKeyDown(e) {
+  var tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  if (e.key === "r" || e.key === "R") rotatePallet();
+  else if (e.key === "d" || e.key === "D") duplicatePallet();
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removePallet(state.selected); }
+  else if (e.key === "Escape") selectPallet(null);
+  else if (e.key === "[") toggleSidebar();
+  else if (e.key === "]") toggleManifest();
+}
+
+/* ------------------------------ trailers ------------------------------ */
+
+function buildTrailerMeshes(t) {
+  disposeTrailerMeshes(t);
+
+  var floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(t.dims.l, t.dims.w),
+    new THREE.MeshPhongMaterial({ color: 0x6a6a75, side: THREE.DoubleSide })
+  );
+  floor.rotation.x = Math.PI / 2;
+  floor.position.set(t.dims.l / 2, 0, t.dims.w / 2);
+
+  var frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(t.dims.l, t.dims.h, t.dims.w)),
+    new THREE.LineBasicMaterial({ color: 0x00ff00 })
+  );
+  frame.position.set(t.dims.l / 2, t.dims.h / 2, t.dims.w / 2);
+
+  var cab = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(100, 80, 80)),
+    new THREE.LineBasicMaterial({ color: 0x555555 })
+  );
+  cab.position.set(-50, 40, t.dims.w / 2);
+
+  t.floor = floor; t.frame = frame; t.cabFrame = cab;
+  [floor, frame, cab].forEach(function (m) { m.visible = false; scene.add(m); });
+}
+
+function disposeTrailerMeshes(t) {
+  ["floor", "frame", "cabFrame"].forEach(function (k) {
+    var m = t[k];
+    if (!m) return;
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    if (m.material) m.material.dispose();
+    t[k] = null;
+  });
+}
+
+function addNewTrailer(opts) {
+  opts = opts || {};
+  var preset = PRESETS[0];
+  var t = {
+    name: opts.name || ("Trailer " + (state.trailers.length + 1)),
+    dims: opts.dims || { l: preset.l, w: preset.w, h: preset.h },
+    maxWeight: num(opts.maxWeight, 45000),
+    pallets: [],
+    floor: null, frame: null, cabFrame: null
+  };
+  buildTrailerMeshes(t);
+  state.trailers.push(t);
+  refreshTrailerSelect(state.trailers.length - 1);
+  switchTrailer();
+  return t;
+}
+
+function removeTrailer() {
+  if (state.trailers.length <= 1) { toast("At least one trailer must remain.", "err"); return; }
+  var t = currentTrailer();
+  if (!confirm('Remove "' + t.name + '" and its ' + t.pallets.length + ' pallet(s)?')) return;
+  t.pallets.slice().forEach(function (p) { disposeMesh(p); });
+  t.pallets.length = 0;
+  disposeTrailerMeshes(t);
+  state.trailers.splice(state.current, 1);
+  refreshTrailerSelect(Math.max(0, state.current - 1));
+  switchTrailer();
+}
+
+function refreshTrailerSelect(indexToSelect) {
+  var sel = $("trailerSelect");
+  sel.innerHTML = "";
+  state.trailers.forEach(function (t, i) {
+    var o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = t.name;
+    sel.appendChild(o);
+  });
+  if (state.trailers.length) sel.value = String(Math.min(indexToSelect, state.trailers.length - 1));
+}
+
+function switchTrailer() {
+  state.trailers.forEach(function (t) {
+    t.pallets.forEach(function (p) { scene.remove(p); });
+    if (t.frame) t.frame.visible = false;
+    if (t.floor) t.floor.visible = false;
+    if (t.cabFrame) t.cabFrame.visible = false;
+  });
+
+  state.current = parseInt($("trailerSelect").value, 10);
+  if (isNaN(state.current)) state.current = 0;
+
+  var t = currentTrailer();
+  if (!t) return;
+
+  t.pallets.forEach(function (p) { scene.add(p); });
+  if (t.frame) t.frame.visible = true;
+  if (t.floor) t.floor.visible = true;
+  if (t.cabFrame) t.cabFrame.visible = true;
+
+  fillTrailerForm(t);
+  selectPallet(null);
+  orbit.target.set(t.dims.l / 2, 0, t.dims.w / 2);
+  orbit.update();
+  updateManifest();
+  setupDragControls();
+}
+
+function fillTrailerForm(t) {
+  $("trailerName").value = t.name;
+  $("tL").value = t.dims.l;
+  $("tW").value = t.dims.w;
+  $("tH").value = t.dims.h;
+  $("tMaxWeight").value = t.maxWeight;
+  var match = PRESETS.filter(function (p) {
+    return p.l === t.dims.l && p.w === t.dims.w && p.h === t.dims.h;
+  })[0];
+  $("trailerPreset").value = match ? match.id : "custom";
+}
+
+function onPresetChange() {
+  var p = PRESETS.filter(function (x) { return x.id === $("trailerPreset").value; })[0];
+  if (!p || p.id === "custom") return;
+  $("tL").value = p.l; $("tW").value = p.w; $("tH").value = p.h;
+}
+
+function applyTrailerSettings() {
+  var t = currentTrailer();
+  if (!t) return;
+  var l = num($("tL").value, 0), w = num($("tW").value, 0), h = num($("tH").value, 0);
+  if (l <= 0 || w <= 0 || h <= 0) { toast("Trailer dimensions must be greater than zero.", "err"); return; }
+
+  t.name = ($("trailerName").value || t.name).trim();
+  t.dims = { l: l, w: w, h: h };
+  t.maxWeight = num($("tMaxWeight").value, 0);
+
+  buildTrailerMeshes(t);
+  t.frame.visible = true; t.floor.visible = true; t.cabFrame.visible = true;
+
+  t.pallets.forEach(function (p) { clampToTrailer(p); });
+  refreshTrailerSelect(state.current);
+  orbit.target.set(l / 2, 0, w / 2);
+  orbit.update();
+  updateManifest();
+  toast("Trailer settings applied.", "ok");
+}
+
+/* ------------------------------ pallets ------------------------------ */
+
+function makeLabelMaterial(text, bgColor) {
+  var canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 256;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = bgColor; ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 8; ctx.strokeRect(4, 4, 248, 248);
+  ctx.fillStyle = "#000"; ctx.font = "bold 46px Arial"; ctx.textAlign = "center";
+  ctx.fillText(String(text || "").slice(0, 14), 128, 142);
+  return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
+}
+
+function normalizePallet(d) {
+  d = d || {};
+  var pos = d.pos || {};
+  return {
+    label: String(d.label == null ? "P" : d.label),
+    l: num(d.l, 48), w: num(d.w, 40), h: num(d.h, 48),
+    weight: num(d.weight, 0), value: num(d.value, 0),
+    notes: String(d.notes || ""),
+    img: typeof d.img === "string" ? d.img : "",
+    color: typeof d.color === "string" && d.color ? d.color : randomColor(),
+    pos: { x: num(pos.x, 24), y: num(pos.y, 24), z: num(pos.z, 20) }
+  };
+}
+
+function makePalletMesh(data) {
+  var d = normalizePallet(data);
+  var mesh = new THREE.Mesh(new THREE.BoxGeometry(d.l, d.h, d.w), makeLabelMaterial(d.label, d.color));
+  mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
+  mesh.userData = d;
+  return mesh;
+}
+
+function addPallet(data) {
+  var t = currentTrailer();
+  if (!t) return null;
+  var mesh = makePalletMesh(data);
+  scene.add(mesh);
+  t.pallets.push(mesh);
+  clampToTrailer(mesh);
+  updateManifest();
+  setupDragControls();
+  return mesh;
+}
+
+function addPalletFromForm() {
+  var t = currentTrailer();
+  if (!t) return;
+
+  var d = {
+    label: $("label").value || "P",
+    l: num($("L").value, 48), w: num($("W").value, 40), h: num($("H").value, 48),
+    weight: num($("Weight").value, 0), value: num($("Value").value, 0),
+    notes: $("Notes").value,
+    img: "",
+    pos: { x: Math.min(24 + num($("L").value, 48) / 2, t.dims.l), y: num($("H").value, 48) / 2, z: t.dims.w / 2 }
+  };
+
+  if (d.l <= 0 || d.w <= 0 || d.h <= 0) { toast("Pallet dimensions must be greater than zero.", "err"); return; }
+  warnIfOversize(d, t);
+
+  var fileInput = $("palletImg");
+  var file = fileInput.files && fileInput.files[0];
+
+  // Lesson learned: encode the image at load time, never from a buffer held
+  // across an async boundary that may already have been invalidated.
+  if (file) {
+    var fr = new FileReader();
+    fr.onload = function (e) {
+      d.img = String(e.target.result || "");
+      fileInput.value = "";
+      finishAdd(d);
+    };
+    fr.onerror = function () {
+      toast("Photo could not be read. Pallet added without an image.", "err");
+      fileInput.value = "";
+      finishAdd(d);
+    };
+    fr.readAsDataURL(file);
+  } else {
+    finishAdd(d);
+  }
+}
+
+function finishAdd(d) {
+  var mesh = addPallet(d);
+  if (mesh) {
+    selectPallet(mesh);
+    $("label").value = nextLabel($("label").value);
+  }
+}
+
+function nextLabel(current) {
+  var m = /^(.*?)(\d+)$/.exec(String(current || ""));
+  if (!m) return current;
+  return m[1] + String(parseInt(m[2], 10) + 1);
+}
+
+function warnIfOversize(d, t) {
+  var fitsFlat = (d.l <= t.dims.l && d.w <= t.dims.w) || (d.w <= t.dims.l && d.l <= t.dims.w);
+  if (!fitsFlat) toast("Footprint is larger than the trailer floor.", "err");
+  else if (d.h > t.dims.h) toast("Pallet height exceeds the trailer interior height.", "err");
+}
+
+function updatePallet() {
+  var p = state.selected;
+  if (!p) { toast("Select a pallet first.", "err"); return; }
+  var t = currentTrailer();
+
+  var d = p.userData;
+  var newL = num($("L").value, d.l), newW = num($("W").value, d.w), newH = num($("H").value, d.h);
+  if (newL <= 0 || newW <= 0 || newH <= 0) { toast("Pallet dimensions must be greater than zero.", "err"); return; }
+
+  var labelChanged = d.label !== $("label").value;
+  var sizeChanged = (newL !== d.l || newW !== d.w || newH !== d.h);
+
+  d.label = $("label").value;
+  d.weight = num($("Weight").value, 0);
+  d.value = num($("Value").value, 0);
+  d.notes = $("Notes").value;
+  d.l = newL; d.w = newW; d.h = newH;
+
+  if (sizeChanged) {
+    p.geometry.dispose();
+    p.geometry = new THREE.BoxGeometry(d.l, d.h, d.w);
+  }
+  if (labelChanged) {
+    disposeMaterial(p.material);
+    p.material = makeLabelMaterial(d.label, d.color);
+  }
+
+  var file = $("palletImg").files && $("palletImg").files[0];
+  if (file) {
+    var fr = new FileReader();
+    fr.onload = function (e) { d.img = String(e.target.result || ""); $("palletImg").value = ""; updateManifest(); };
+    fr.readAsDataURL(file);
+  }
+
+  if (t) warnIfOversize(d, t);
+  clampToTrailer(p);
+  resolveCollisions(p);
+  updateManifest();
+  toast("Pallet updated.", "ok");
+}
+
+function rotatePallet() {
+  var p = state.selected;
+  if (!p) { toast("Select a pallet first.", "err"); return; }
+  var d = p.userData;
+  var swap = d.l; d.l = d.w; d.w = swap;
+  p.geometry.dispose();
+  p.geometry = new THREE.BoxGeometry(d.l, d.h, d.w);
+  clampToTrailer(p);
+  resolveCollisions(p);
+  fillSidebarForm(d);
+  updateManifest();
+}
+
+function duplicatePallet() {
+  var p = state.selected;
+  if (!p) { toast("Select a pallet first.", "err"); return; }
+  var d = p.userData;
+  var copy = JSON.parse(JSON.stringify(d));
+  copy.label = nextLabel(d.label);
+  copy.pos = { x: d.pos.x, y: p.position.y, z: p.position.z };
+  copy.pos.x = p.position.x + d.l;
+  var mesh = addPallet(copy);
+  if (mesh) { resolveCollisions(mesh); selectPallet(mesh); }
+}
+
+function removePallet(p) {
+  if (!p) { toast("Select a pallet first.", "err"); return; }
+  var t = currentTrailer();
+  if (!t) return;
+  var i = t.pallets.indexOf(p);
+  if (i >= 0) t.pallets.splice(i, 1);
+  disposeMesh(p);
+  if (state.selected === p) selectPallet(null);
+  updateManifest();
+  setupDragControls();
+}
+
+function disposeMesh(m) {
+  scene.remove(m);
+  if (m.geometry) m.geometry.dispose();
+  disposeMaterial(m.material);
+}
+
+function disposeMaterial(mat) {
+  if (!mat) return;
+  if (mat.map) mat.map.dispose();
+  mat.dispose();
+}
+
+function selectPallet(mesh) {
+  state.selected = mesh || null;
+  if (mesh) fillSidebarForm(mesh.userData);
+  updateSelectionUI();
+  updateManifest();
+}
+
+function fillSidebarForm(d) {
+  $("label").value = d.label;
+  $("L").value = d.l; $("W").value = d.w; $("H").value = d.h;
+  $("Weight").value = d.weight;
+  $("Value").value = d.value;
+  $("Notes").value = d.notes || "";
+}
+
+function updateSelectionUI() {
+  $("selectionNotice").textContent = state.selected
+    ? "Selected: " + state.selected.userData.label
+    : "No selection";
+}
+
+function toggleDelete() {
+  state.deleteMode = !state.deleteMode;
+  var b = $("delToggle");
+  b.classList.toggle("active", state.deleteMode);
+  b.textContent = "Delete mode: " + (state.deleteMode ? "ON - click a pallet" : "off");
+  if (dragControls) dragControls.enabled = !state.deleteMode;
+}
+
+/* Panels collapse to zero width. The handles sit in the canvas area, so a
+   hidden panel can always be brought back. force === true/false sets the
+   state outright, undefined toggles it. */
+function setPanel(panelId, force) {
+  var panel = $(panelId);
+  var collapsed = (force === undefined) ? !panel.classList.contains("collapsed") : !!force;
+  panel.classList.toggle("collapsed", collapsed);
+  refreshPanelHandles();
+  setTimeout(onResize, 260);
+  return collapsed;
+}
+
+function toggleSidebar() { return setPanel("sidebar"); }
+function toggleManifest() { return setPanel("manifestSide"); }
+
+function refreshPanelHandles() {
+  var sbHidden = $("sidebar").classList.contains("collapsed");
+  var mfHidden = $("manifestSide").classList.contains("collapsed");
+  $("sidebarToggle").innerHTML = sbHidden ? "&#187;" : "&#171;";
+  $("sidebarToggle").setAttribute("aria-expanded", String(!sbHidden));
+  $("manifestToggle").innerHTML = mfHidden ? "&#171;" : "&#187;";
+  $("manifestToggle").setAttribute("aria-expanded", String(!mfHidden));
+}
+
+/* --------------------------- drag and picking --------------------------- */
+
+function setupDragControls() {
+  var t = currentTrailer();
+  if (!t) return;
+  if (dragControls) dragControls.dispose();
+  dragControls = new THREE.DragControls(t.pallets, camera, renderer.domElement);
+  dragControls.enabled = !state.deleteMode;
+  dragControls.addEventListener("dragstart", function (e) {
+    orbit.enabled = false;
+    selectPallet(e.object);
+  });
+  dragControls.addEventListener("drag", function (e) {
+    clampToTrailer(e.object);
+    resolveCollisions(e.object);
+  });
+  dragControls.addEventListener("dragend", function (e) {
+    orbit.enabled = true;
+    syncPosition(e.object);
+    updateManifest();
+  });
+
+  renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
+  renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+}
+
+function onCanvasPointerDown(ev) {
+  if (!state.deleteMode) return;
+  var t = currentTrailer();
+  if (!t) return;
+  var rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  var hits = raycaster.intersectObjects(t.pallets, false);
+  if (hits.length) removePallet(hits[0].object);
+}
+
+function syncPosition(p) {
+  p.userData.pos = { x: p.position.x, y: p.position.y, z: p.position.z };
+}
+
+function halfDims(p) {
+  return {
+    l: p.geometry.parameters.width / 2,
+    h: p.geometry.parameters.height / 2,
+    w: p.geometry.parameters.depth / 2
+  };
+}
+
+function clampToTrailer(p) {
+  var t = currentTrailer();
+  if (!t) return;
+  var hd = halfDims(p);
+  p.position.x = Math.min(Math.max(p.position.x, hd.l), Math.max(hd.l, t.dims.l - hd.l));
+  p.position.z = Math.min(Math.max(p.position.z, hd.w), Math.max(hd.w, t.dims.w - hd.w));
+  p.position.y = Math.min(Math.max(p.position.y, hd.h), Math.max(hd.h, t.dims.h - hd.h));
+  syncPosition(p);
+}
+
+function resolveCollisions(p) {
+  var t = currentTrailer();
+  if (!t) return;
+  var a = halfDims(p);
+  t.pallets.forEach(function (other) {
+    if (other === p) return;
+    var b = halfDims(other);
+    var dx = Math.abs(p.position.x - other.position.x);
+    var dy = Math.abs(p.position.y - other.position.y);
+    var dz = Math.abs(p.position.z - other.position.z);
+    if (dx < a.l + b.l && dy < a.h + b.h && dz < a.w + b.w) {
+      var ox = (a.l + b.l) - dx, oy = (a.h + b.h) - dy, oz = (a.w + b.w) - dz;
+      if (oy <= ox && oy <= oz) p.position.y += (p.position.y > other.position.y) ? oy : -oy;
+      else if (ox <= oz) p.position.x += (p.position.x > other.position.x) ? ox : -ox;
+      else p.position.z += (p.position.z > other.position.z) ? oz : -oz;
+    }
+  });
+  syncPosition(p);
+}
+
+/* ------------------------------ manifest ------------------------------ */
+
+function trailerTotals(t) {
+  var tw = 0, tv = 0, floorArea = 0, momentX = 0, momentZ = 0;
+  t.pallets.forEach(function (p) {
+    var d = p.userData;
+    tw += d.weight;
+    tv += d.value;
+    floorArea += d.l * d.w;
+    momentX += d.weight * p.position.x;
+    momentZ += d.weight * p.position.z;
+  });
+  return {
+    weight: tw,
+    value: tv,
+    count: t.pallets.length,
+    floorPct: t.dims.l * t.dims.w > 0 ? (floorArea / (t.dims.l * t.dims.w)) * 100 : 0,
+    cgX: tw > 0 ? momentX / tw : null,
+    cgZ: tw > 0 ? momentZ / tw : null
+  };
+}
+
+function setStat(id, label, value, alert) {
+  var el = $(id);
+  el.innerHTML = "";
+  var s = document.createElement("span"); s.textContent = label;
+  var b = document.createElement("b"); b.textContent = value;
+  el.appendChild(s); el.appendChild(b);
+  el.classList.toggle("alert", !!alert);
+}
+
+function updateManifest() {
+  var t = currentTrailer();
+  var list = $("manifestList");
+  list.innerHTML = "";
+  if (!t) return;
+
+  var tot = trailerTotals(t);
+
+  $("totalWeightDisplay").textContent = "Weight: " + tot.weight.toLocaleString() + " lb";
+  $("totalValueDisplay").textContent = "Value: $" + tot.value.toLocaleString();
+  setStat("statPieces", "Pieces", String(tot.count));
+  setStat("statFloor", "Floor use", tot.floorPct.toFixed(1) + "%", tot.floorPct > 100);
+
+  if (tot.cgX === null) {
+    setStat("statCgLong", "CG from nose", "n/a");
+    setStat("statCgLat", "Lateral offset", "n/a");
+  } else {
+    var pct = (tot.cgX / t.dims.l) * 100;
+    setStat("statCgLong", "CG from nose", tot.cgX.toFixed(1) + " in (" + pct.toFixed(1) + "%)");
+    var offset = tot.cgZ - t.dims.w / 2;
+    setStat("statCgLat", "Lateral offset", (offset >= 0 ? "+" : "") + offset.toFixed(1) + " in",
+            Math.abs(offset) > t.dims.w * 0.08);
+  }
+
+  var payloadPct = t.maxWeight > 0 ? (tot.weight / t.maxWeight) * 100 : 0;
+  setStat("statPayload", "Payload used", payloadPct.toFixed(1) + "%", payloadPct > 100);
+
+  t.pallets.forEach(function (p) {
+    var d = p.userData;
+    var div = document.createElement("div");
+    div.className = "manifest-item" + (p === state.selected ? " sel" : "");
+
+    var title = document.createElement("b");
+    title.textContent = d.label;
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = d.l + " x " + d.w + " x " + d.h + " in  |  " +
+                       d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString();
+
+    div.appendChild(title);
+    div.appendChild(meta);
+
+    if (d.notes) {
+      var note = document.createElement("div");
+      note.className = "note";
+      note.textContent = d.notes;
+      div.appendChild(note);
+    }
+    if (d.img) {
+      var img = document.createElement("img");
+      img.className = "pallet-thumb";
+      img.src = d.img;
+      img.alt = d.label;
+      div.appendChild(img);
+    }
+
+    div.onclick = function () { selectPallet(p); };
+    list.appendChild(div);
+  });
+}
+
+/* ------------------------------ BOL ------------------------------ */
+
+var BOL_FIELDS = [
+  ["bolDate", "date"], ["bolRef", "ref"], ["bolCarrier", "carrier"],
+  ["bolTrailerNum", "trailerNum"], ["bolSeal", "seal"],
+  ["fromContact", "fromContact"], ["fromAddr", "fromAddr"], ["fromCSZ", "fromCSZ"],
+  ["toContact", "toContact"], ["toAddr", "toAddr"], ["toCSZ", "toCSZ"],
+  ["billAddr", "billAddr"], ["billCSZ", "billCSZ"],
+  ["bolSpecialFrom", "specialFrom"], ["bolSpecialTo", "specialTo"]
+];
+var BOL_CHECKS = [["billPrepaid", "billPrepaid"], ["billCollect", "billCollect"], ["billOther", "billOther"]];
+
+function openBOL() {
+  BOL_FIELDS.forEach(function (f) { $(f[0]).value = state.shipment[f[1]] || ""; });
+  BOL_CHECKS.forEach(function (f) { $(f[0]).checked = !!state.shipment[f[1]]; });
+  $("bolModal").style.display = "block";
+}
+
+function saveBOL() {
+  BOL_FIELDS.forEach(function (f) { state.shipment[f[1]] = $(f[0]).value; });
+  BOL_CHECKS.forEach(function (f) { state.shipment[f[1]] = $(f[0]).checked; });
+  $("bolModal").style.display = "none";
+  toast("BOL header saved.", "ok");
+}
+
+/* ------------------------------ PDF ------------------------------ */
+
+function generatePDF() {
+  if (!window.jspdf || !window.jspdf.jsPDF) { toast("jsPDF did not load. PDF export unavailable.", "err"); return; }
+  var t = currentTrailer();
+  if (!t) return;
+
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF();
+  var s = state.shipment;
+  var tot = trailerTotals(t);
+
+  renderer.render(scene, camera);
+  var snapshot = renderer.domElement.toDataURL("image/png");
+
+  doc.setLineWidth(0.3); doc.setDrawColor(0);
+  doc.setFillColor(50); doc.rect(10, 10, 190, 6, "F");
+  doc.setTextColor(255); doc.setFontSize(8); doc.text("SHIPMENT INFO", 12, 14);
+  doc.setTextColor(0); doc.rect(10, 10, 190, 80);
+
+  doc.text("Date: " + (s.date || ""), 15, 22);
+  doc.text("BOL #: " + (s.ref || ""), 15, 27);
+  doc.text("Carrier: " + (s.carrier || ""), 105, 22);
+  doc.text("Trailer: " + (s.trailerNum || t.name || ""), 105, 27);
+  doc.text("Seal: " + (s.seal || ""), 105, 32);
+
+  doc.setFillColor(230); doc.rect(10, 36, 190, 5, "F"); doc.text("SHIP FROM & TO", 12, 40);
+  doc.text("SHIP FROM:", 15, 48);
+  doc.text("Contact: " + (s.fromContact || ""), 15, 52);
+  doc.text(s.fromAddr || "", 15, 56);
+  doc.text(s.fromCSZ || "", 15, 60);
+  doc.text("INSTRUCTIONS (FROM):", 15, 65);
+  doc.setFontSize(7); doc.text(s.specialFrom || "N/A", 15, 69, { maxWidth: 80 }); doc.setFontSize(8);
+
+  doc.text("SHIP TO:", 105, 48);
+  doc.text("Contact: " + (s.toContact || ""), 105, 52);
+  doc.text(s.toAddr || "", 105, 56);
+  doc.text(s.toCSZ || "", 105, 60);
+  doc.text("INSTRUCTIONS (TO):", 105, 65);
+  doc.setFontSize(7); doc.text(s.specialTo || "N/A", 105, 69, { maxWidth: 80 }); doc.setFontSize(8);
+
+  doc.setFillColor(230); doc.rect(10, 75, 190, 5, "F"); doc.text("THIRD PARTY BILLING", 12, 79);
+  doc.text("Type: " + (s.billPrepaid ? "Prepaid " : "") + (s.billCollect ? "Collect " : "") + (s.billOther ? "Other" : ""), 15, 84);
+  doc.text("Billing: " + (s.billAddr || "") + " " + (s.billCSZ || ""), 15, 88);
+
+  var canvas = renderer.domElement;
+  var aspect = canvas.width / Math.max(canvas.height, 1);
+  var iw = 190, ih = iw / aspect;
+  if (ih > 88) { ih = 88; iw = ih * aspect; }
+  doc.addImage(snapshot, "PNG", 10 + (190 - iw) / 2, 96, iw, ih);
+
+  var y = 96 + ih + 8;
+  doc.setFontSize(10);
+  doc.text("GROSS WEIGHT: " + tot.weight.toLocaleString() + " lb   |   TOTAL VALUE: $" + tot.value.toLocaleString() +
+           "   |   PIECES: " + tot.count, 10, y);
+  if (tot.cgX !== null) {
+    doc.setFontSize(8);
+    doc.text("Planning CG from nose: " + tot.cgX.toFixed(1) + " in (" +
+             ((tot.cgX / t.dims.l) * 100).toFixed(1) + "% of interior length). Planning aid only, not an axle-weight calculation.", 10, y + 5);
+  }
+
+  doc.addPage();
+  doc.setFontSize(12); doc.text("Detailed Manifest - " + t.name, 10, 15);
+  doc.setFontSize(8);
+  doc.text("Interior: " + t.dims.l + " x " + t.dims.w + " x " + t.dims.h + " in", 10, 21);
+
+  var my = 30;
+  t.pallets.forEach(function (p, i) {
+    var d = p.userData;
+    doc.setFontSize(9);
+    doc.text((i + 1) + ". " + d.label + "  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
+             d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString(), 15, my);
+    doc.setFontSize(7); doc.setTextColor(100);
+    doc.text("Position (in from nose / floor / left): " +
+             p.position.x.toFixed(0) + " / " + p.position.y.toFixed(0) + " / " + p.position.z.toFixed(0), 15, my + 4);
+    doc.text("Note: " + (d.notes || "No notes"), 15, my + 8, { maxWidth: 125 });
+    doc.setTextColor(0);
+    if (d.img) {
+      try { doc.addImage(d.img, imageFormat(d.img), 150, my - 4, 40, 20); }
+      catch (err) { doc.text("[image error]", 150, my); }
+    }
+    my += 26;
+    if (my > 265) { doc.addPage(); my = 20; }
+  });
+
+  var name = "BOL_" + (s.ref ? String(s.ref).replace(/[^\w-]/g, "_") : t.name.replace(/[^\w-]/g, "_")) + ".pdf";
+  doc.save(name);
+}
+
+/* ------------------------------ save / load ------------------------------ */
+
+function serialize() {
+  return {
+    format: SAVE_FORMAT,
+    version: SAVE_VERSION,
+    app: APP_VERSION,
+    saved: new Date().toISOString(),
+    shipment: state.shipment,
+    trailers: state.trailers.map(function (t) {
+      return {
+        name: t.name,
+        dims: t.dims,
+        maxWeight: t.maxWeight,
+        pallets: t.pallets.map(function (p) {
+          var d = p.userData;
+          return {
+            label: d.label, l: d.l, w: d.w, h: d.h,
+            weight: d.weight, value: d.value, notes: d.notes,
+            img: d.img, color: d.color,
+            pos: { x: p.position.x, y: p.position.y, z: p.position.z }
+          };
+        })
+      };
+    })
+  };
+}
+
+function saveProject() {
+  var blob = new Blob([JSON.stringify(serialize(), null, 2)], { type: "application/json" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "TrailerPlan_" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  toast("Layout saved.", "ok");
+}
+
+/* v1 files used {s: shipment, t: [{d: dims, p: [pallets]}]} */
+function migrate(raw) {
+  if (raw && raw.format === SAVE_FORMAT) return raw;
+  if (raw && raw.t && Array.isArray(raw.t)) {
+    return {
+      format: SAVE_FORMAT, version: SAVE_VERSION, app: APP_VERSION,
+      shipment: raw.s || {},
+      trailers: raw.t.map(function (t, i) {
+        return {
+          name: "Trailer " + (i + 1),
+          dims: t.d || { l: 636, w: 102, h: 110 },
+          maxWeight: 45000,
+          pallets: (t.p || [])
+        };
+      })
+    };
+  }
+  return null;
+}
+
+function loadProject(e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function (ev) {
+    var data;
+    try { data = JSON.parse(String(ev.target.result)); }
+    catch (err) { toast("That file is not valid JSON.", "err"); e.target.value = ""; return; }
+
+    var project = migrate(data);
+    if (!project || !Array.isArray(project.trailers) || project.trailers.length === 0) {
+      toast("Unrecognized layout file. No trailers found.", "err");
+      e.target.value = "";
+      return;
+    }
+
+    clearAll();
+    state.shipment = project.shipment || {};
+
+    project.trailers.forEach(function (td) {
+      var t = addNewTrailer({
+        name: td.name,
+        dims: {
+          l: num(td.dims && td.dims.l, 636),
+          w: num(td.dims && td.dims.w, 102),
+          h: num(td.dims && td.dims.h, 110)
+        },
+        maxWeight: num(td.maxWeight, 45000)
+      });
+      (td.pallets || []).forEach(function (pd) {
+        var mesh = makePalletMesh(pd);
+        scene.add(mesh);
+        t.pallets.push(mesh);
+      });
+    });
+
+    refreshTrailerSelect(0);
+    switchTrailer();
+    e.target.value = "";
+    toast("Loaded " + state.trailers.length + " trailer(s).", "ok");
+  };
+  fr.onerror = function () { toast("The file could not be read.", "err"); e.target.value = ""; };
+  fr.readAsText(file);
+}
+
+function clearAll() {
+  state.trailers.forEach(function (t) {
+    t.pallets.forEach(function (p) { disposeMesh(p); });
+    t.pallets.length = 0;
+    disposeTrailerMeshes(t);
+  });
+  state.trailers = [];
+  state.current = -1;
+  state.selected = null;
+  if (dragControls) { dragControls.dispose(); dragControls = null; }
+  $("trailerSelect").innerHTML = "";
+}
+
+/* ------------------------------ loop ------------------------------ */
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (orbit) orbit.update();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener("load", init);
+
+/* Exposed for the headless test harness. */
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { normalizePallet: normalizePallet, nextLabel: nextLabel, migrate: migrate, imageFormat: imageFormat };
+}
+</script>
+</body>
+</html>
