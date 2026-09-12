@@ -240,6 +240,40 @@ test("oblong items (very different length vs width) clamp, rotate, and report co
   eq(p.geometry.parameters.width, 12, "geometry rebuilt to match after rotate");
 });
 
+test("a tapered item (different width at each end) uses the wider end for its hitbox and floor math", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("label").value = "FENDER-1";
+  d.getElementById("L").value = "40";
+  d.getElementById("W").value = "40";
+  d.getElementById("W2").value = "30";
+  win.addPalletFromForm();
+
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.w, 40, "near-end width stored as entered");
+  eq(p.userData.w2, 30, "far-end width stored as entered");
+  eq(p.geometry.parameters.depth, 40, "3D hitbox sized to the wider end, not the narrower one");
+
+  const tot = win.trailerTotals(win.state.trailers[0]);
+  const expectedArea = 40 * ((40 + 30) / 2);
+  eq(tot.floorPct, (expectedArea / (win.state.trailers[0].dims.l * win.state.trailers[0].dims.w)) * 100,
+    "floor-use % uses the true average width (trapezoid area), not the wider or narrower end alone");
+
+  assert(d.getElementById("manifestList").textContent.includes("40 x 40-30 x"), "manifest shows both widths");
+});
+
+test("leaving the tapered-width field blank keeps a plain uniform box (no behavior change)", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("W").value = "40";
+  d.getElementById("W2").value = "";
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.w2, 40, "w2 defaults to w when left blank");
+  eq(win.isTapered(p.userData), false, "not considered tapered");
+  eq(p.geometry.parameters.depth, 40, "hitbox unaffected");
+});
+
 test("changing trailer dimensions (entered in feet) rebuilds the frame and re-clamps cargo", () => {
   const win = boot();
   win.addPalletFromForm();

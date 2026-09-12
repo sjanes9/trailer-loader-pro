@@ -197,6 +197,9 @@
       <div><label>Wid in</label><input type="number" id="W" value="40" min="1" step="1"></div>
       <div><label>Hgt in</label><input type="number" id="H" value="48" min="1" step="1"></div>
     </div>
+    <label>Wid in - other end (optional, if tapered)</label>
+    <input type="number" id="W2" min="0" step="1" placeholder="Same as Wid in if blank">
+    <p class="hint">For a part that's wider on one end than the other (e.g. 40 in on one end, 30 in on the other). Leave blank for a uniform width. The 3D shape is sized to the wider end so it never clips the trailer; floor-space % uses the true average width; the manifest and PDF show both widths.</p>
     <div class="row">
       <div><label>Weight lb</label><input type="number" id="Weight" value="1500" min="0" step="1"></div>
       <div><label>Value $</label><input type="number" id="Value" value="5000" min="0" step="1"></div>
@@ -274,7 +277,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.6.0";
+var APP_VERSION = "2.7.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -939,19 +942,38 @@ var ITEM_TYPES = { pallet: "Pallet", tote: "Tote", box: "Box", piece: "Individua
 function normalizePallet(d) {
   d = d || {};
   var pos = d.pos || {};
+  var w = num(d.w, 40);
+  var w2raw = num(d.w2, NaN);
   return {
     label: String(d.label == null ? "P" : d.label),
     itemType: ITEM_TYPES.hasOwnProperty(d.itemType) ? d.itemType : "pallet",
     shelfId: String(d.shelfId || ""),
     partCount: Math.max(1, Math.round(num(d.partCount, 1))),
     customType: String(d.customType || ""),
-    l: num(d.l, 48), w: num(d.w, 40), h: num(d.h, 48),
+    l: num(d.l, 48), w: w, w2: (isFinite(w2raw) && w2raw > 0) ? w2raw : w,
+    h: num(d.h, 48),
     weight: num(d.weight, 0), value: num(d.value, 0),
     notes: String(d.notes || ""),
     img: typeof d.img === "string" ? d.img : "",
     color: typeof d.color === "string" && d.color ? d.color : randomColor(),
     pos: { x: num(pos.x, 24), y: num(pos.y, 24), z: num(pos.z, 20) }
   };
+}
+
+/* Tapered items (Wid in != Wid in "other end") are still rendered/clamped
+   as a plain box, sized to the wider end so nothing ever clips a wall --
+   only the reported floor-space % and manifest/PDF text reflect the taper. */
+function effectiveW(d) {
+  return Math.max(d.w, d.w2 || d.w);
+}
+
+function isTapered(d) {
+  return !!(d.w2 && d.w2 !== d.w);
+}
+
+function dimsText(d) {
+  var wPart = isTapered(d) ? (d.w + "-" + d.w2) : String(d.w);
+  return d.l + " x " + wPart + " x " + d.h + " in";
 }
 
 /* "Box" shows a part-count field, "Custom" shows a free-text type-name
@@ -981,23 +1003,24 @@ function itemTypeLabel(d) {
    footprint (never larger) so nothing can poke through a trailer wall or
    another pallet when the parent box itself is correctly clamped/resolved. */
 function addCargoDecoration(mesh, d) {
+  var w = effectiveW(d);
   if (d.itemType === "pallet") {
     var deckMat = new THREE.MeshPhongMaterial({ color: 0xa9773f });
     var deckH = Math.max(4, d.h * 0.08);
-    var deck = new THREE.Mesh(new THREE.BoxGeometry(d.l, deckH, d.w), deckMat);
+    var deck = new THREE.Mesh(new THREE.BoxGeometry(d.l, deckH, w), deckMat);
     deck.position.set(0, -d.h / 2 + deckH / 2, 0);
     mesh.add(deck);
 
     var loadMat = new THREE.MeshPhongMaterial({ color: 0xd8c9a3 });
-    var lw = d.l * 0.4, lh = d.h * 0.4, ld = d.w * 0.4;
-    [[-d.l * 0.18, d.w * 0.15], [d.l * 0.18, -d.w * 0.15]].forEach(function (o) {
+    var lw = d.l * 0.4, lh = d.h * 0.4, ld = w * 0.4;
+    [[-d.l * 0.18, w * 0.15], [d.l * 0.18, -w * 0.15]].forEach(function (o) {
       var box = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), loadMat);
       box.position.set(o[0], d.h / 2 - lh / 2 + deckH, o[1]);
       mesh.add(box);
     });
   } else if (d.itemType === "tote") {
     var lipMat = new THREE.MeshPhongMaterial({ color: 0x2c3e50 });
-    var lip = new THREE.Mesh(new THREE.BoxGeometry(d.l, Math.max(3, d.h * 0.08), d.w), lipMat);
+    var lip = new THREE.Mesh(new THREE.BoxGeometry(d.l, Math.max(3, d.h * 0.08), w), lipMat);
     lip.position.set(0, d.h / 2, 0);
     mesh.add(lip);
   }
@@ -1018,7 +1041,7 @@ function refreshCargoDecoration(mesh) {
 
 function makePalletMesh(data) {
   var d = normalizePallet(data);
-  var mesh = new THREE.Mesh(new THREE.BoxGeometry(d.l, d.h, d.w), makeLabelMaterial(d.label, d.color));
+  var mesh = new THREE.Mesh(new THREE.BoxGeometry(d.l, d.h, effectiveW(d)), makeLabelMaterial(d.label, d.color));
   mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
   mesh.userData = d;
   addCargoDecoration(mesh, d);
@@ -1047,7 +1070,7 @@ function addPalletFromForm() {
     shelfId: $("cargoShelfId").value,
     partCount: num($("partCount").value, 1),
     customType: $("customType").value,
-    l: num($("L").value, 48), w: num($("W").value, 40), h: num($("H").value, 48),
+    l: num($("L").value, 48), w: num($("W").value, 40), w2: $("W2").value, h: num($("H").value, 48),
     weight: num($("Weight").value, 0), value: num($("Value").value, 0),
     notes: $("Notes").value,
     img: "",
@@ -1100,7 +1123,8 @@ function nextLabel(current) {
 }
 
 function warnIfOversize(d, t) {
-  var fitsFlat = (d.l <= t.dims.l && d.w <= t.dims.w) || (d.w <= t.dims.l && d.l <= t.dims.w);
+  var w = Math.max(num(d.w, 0), num(d.w2, 0));
+  var fitsFlat = (d.l <= t.dims.l && w <= t.dims.w) || (w <= t.dims.l && d.l <= t.dims.w);
   if (!fitsFlat) toast("Footprint is larger than the trailer floor.", "err");
   else if (d.h > t.dims.h) toast("Pallet height exceeds the trailer interior height.", "err");
 }
@@ -1112,10 +1136,12 @@ function updatePallet() {
 
   var d = p.userData;
   var newL = num($("L").value, d.l), newW = num($("W").value, d.w), newH = num($("H").value, d.h);
+  var w2raw = num($("W2").value, NaN);
+  var newW2 = (isFinite(w2raw) && w2raw > 0) ? w2raw : newW;
   if (newL <= 0 || newW <= 0 || newH <= 0) { toast("Pallet dimensions must be greater than zero.", "err"); return; }
 
   var labelChanged = d.label !== $("label").value;
-  var sizeChanged = (newL !== d.l || newW !== d.w || newH !== d.h);
+  var sizeChanged = (newL !== d.l || newW !== d.w || newH !== d.h || newW2 !== d.w2);
   var typeChanged = d.itemType !== $("itemType").value;
   var newShelfId = $("cargoShelfId").value;
   var shelfChanged = d.shelfId !== newShelfId;
@@ -1128,11 +1154,11 @@ function updatePallet() {
   d.weight = num($("Weight").value, 0);
   d.value = num($("Value").value, 0);
   d.notes = $("Notes").value;
-  d.l = newL; d.w = newW; d.h = newH;
+  d.l = newL; d.w = newW; d.w2 = newW2; d.h = newH;
 
   if (sizeChanged) {
     p.geometry.dispose();
-    p.geometry = new THREE.BoxGeometry(d.l, d.h, d.w);
+    p.geometry = new THREE.BoxGeometry(d.l, d.h, effectiveW(d));
   }
   if (labelChanged) {
     disposeMaterial(p.material);
@@ -1171,7 +1197,7 @@ function rotatePallet() {
   var d = p.userData;
   var swap = d.l; d.l = d.w; d.w = swap;
   p.geometry.dispose();
-  p.geometry = new THREE.BoxGeometry(d.l, d.h, d.w);
+  p.geometry = new THREE.BoxGeometry(d.l, d.h, effectiveW(d));
   refreshCargoDecoration(p);
   clampToTrailer(p);
   resolveCollisions(p);
@@ -1235,6 +1261,7 @@ function fillSidebarForm(d) {
   $("customType").value = d.customType || "";
   onItemTypeChange();
   $("L").value = d.l; $("W").value = d.w; $("H").value = d.h;
+  $("W2").value = isTapered(d) ? d.w2 : "";
   $("Weight").value = d.weight;
   $("Value").value = d.value;
   $("Notes").value = d.notes || "";
@@ -1397,7 +1424,7 @@ function trailerTotals(t) {
     var d = p.userData;
     tw += d.weight;
     tv += d.value;
-    floorArea += d.l * d.w;
+    floorArea += d.l * ((d.w + d.w2) / 2);
     momentX += d.weight * p.position.x;
     momentZ += d.weight * p.position.z;
   });
@@ -1460,7 +1487,7 @@ function updateManifest() {
 
     var meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = typeLabel + "  |  " + d.l + " x " + d.w + " x " + d.h + " in  |  " +
+    meta.textContent = typeLabel + "  |  " + dimsText(d) + "  |  " +
                        d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString();
 
     div.appendChild(title);
@@ -1582,7 +1609,7 @@ function generatePDF() {
     var typeTag = itemTypeLabel(d);
     if (d.shelfId) typeTag += " on Shelf " + d.shelfId;
     doc.setFontSize(9);
-    doc.text((i + 1) + ". " + d.label + " (" + typeTag + ")  |  " + d.l + "x" + d.w + "x" + d.h + " in  |  " +
+    doc.text((i + 1) + ". " + d.label + " (" + typeTag + ")  |  " + dimsText(d) + "  |  " +
              d.weight.toLocaleString() + " lb  |  $" + d.value.toLocaleString(), 15, my);
     doc.setFontSize(7); doc.setTextColor(100);
     doc.text("Position (in from nose / floor / left): " +
@@ -1620,7 +1647,7 @@ function serialize() {
           return {
             label: d.label, itemType: d.itemType, shelfId: d.shelfId,
             partCount: d.partCount, customType: d.customType,
-            l: d.l, w: d.w, h: d.h,
+            l: d.l, w: d.w, w2: d.w2, h: d.h,
             weight: d.weight, value: d.value, notes: d.notes,
             img: d.img, color: d.color,
             pos: { x: p.position.x, y: p.position.y, z: p.position.z }

@@ -1,6 +1,6 @@
 {
   "name": "trailer-loader-pro",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "description": "Single-file 3D trailer and container load planner with cargo manifest and BOL-style PDF export.",
   "main": "index.html",

@@ -2,6 +2,18 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.7.0] - 2026-09-12
+
+### Added
+
+- Cargo items can now be **tapered** -- wider on one end than the other
+  (e.g. 40 in on one end, 30 in on the other) via a new optional
+  "Wid in - other end" field. The 3D shape and hitbox are sized to the
+  wider end so a tapered item can never clip a trailer wall; floor-space %
+  uses the true average (trapezoid) width; the manifest and PDF show both
+  widths (e.g. "40-30"). Leaving the field blank keeps the existing
+  uniform-box behavior exactly as before.
+
 ## [2.6.0] - 2026-09-12
 
 ### Added
