@@ -12,6 +12,7 @@ Open `index.html` in a browser. There is nothing to install, compile, or serve. 
 - Multiple trailers per project, each with its own dimensions, name, and max payload.
 - Live cargo manifest: piece count, gross weight, declared value, floor utilization, payload utilization, and a weight-weighted center of gravity.
 - Per-pallet label, footprint, height, weight, value, notes, and photo.
+- Optional real 3D model per cargo item: load a `.glb` file and it replaces the plain box, scaled to fit the item's footprint.
 - Shipment/BOL header capture (dates, carrier, seal, ship-from, ship-to, third-party billing).
 - PDF export containing the BOL header, a rendered snapshot of the load, and a detailed manifest with per-piece positions and photos.
 - Save and load layouts as JSON. Layout files from the original build are migrated automatically.
@@ -127,6 +128,7 @@ The CDN tags are version-pinned but do not carry `integrity` attributes, so the 
 three.min.js       sha384-+SwWbnsGY/t3OXVAS6HjMD17NY002cJxCjst/IgjKrteM33IUnwAA2E1g9GAJH2f
 OrbitControls.js   sha384-JgJ+i2aY66WOpoy8gaHf9qPa7F0njVMMU5PHiyp3XNS/xUhDow/9zampfl1dXLAz
 DragControls.js    sha384-xl8j/9WCuz7kw+T3rDWL10UcvT1pWNzqMBuTETGrOwn3Hy3fIpJvFk/cadSOwWEz
+GLTFLoader.js      sha384-+T7zyJFelhxfE6dSQZg8EjauzcjsATKxdLDTMduCAXFzqTsOqUuYb5sjSTj00Kb3
 jspdf.umd.min.js   sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk
 ```
 
@@ -134,7 +136,7 @@ These digests are verified against the npm packages. They are **not** verified a
 
 ### Offline and air-gapped use
 
-If the plant floor has no internet access, download the four scripts above, drop them in a `vendor/` directory, and change the four `<script src>` tags to relative paths. Everything else keeps working, and `npm test` is unaffected because the harness stubs the libraries anyway.
+If the plant floor has no internet access, download the five scripts above, drop them in a `vendor/` directory, and change the five `<script src>` tags to relative paths. Everything else keeps working, and `npm test` is unaffected because the harness stubs the libraries anyway. Without GLTFLoader specifically, the "Load .glb Model" feature just no-ops and cargo keeps its plain-box look -- nothing else is affected.
 
 ---
 

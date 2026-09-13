@@ -2,6 +2,22 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.9.0] - 2026-09-12
+
+### Added
+
+- Cargo items can now load a **real 3D model** in place of a plain box:
+  "Load .glb Model" in the Cargo Item panel accepts a binary glTF (.glb)
+  file, scales it to fit the item's Len/Wid/Hgt exactly, and shows it
+  instead of the plain labeled box (and instead of the pallet/tote
+  deck/rim decoration). The box itself keeps driving drag/clamp/collision
+  math, same as always -- the model is a visual overlay, so nothing about
+  placement or floor-space math changes. "Remove Model" reverts to the
+  normal look. Resizing or rotating the item rescales the model to match.
+  Uses three.js's GLTFLoader (loaded from the same CDN as the rest of the
+  3D library) and degrades gracefully to the plain box if that script
+  didn't load (e.g. offline/air-gapped use).
+
 ## [2.8.1] - 2026-09-12
 
 ### Fixed

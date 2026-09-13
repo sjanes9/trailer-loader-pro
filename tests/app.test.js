@@ -469,6 +469,44 @@ test("center of gravity is weight-weighted and reported", () => {
   assert(/CG from nose/.test(win.document.getElementById("statCgLong").textContent), "CG stat not rendered");
 });
 
+test("3D model loading degrades gracefully when GLTFLoader isn't available (offline/blocked CDN)", () => {
+  const win = boot();
+  const d = win.document;
+  eq(win.gltfLoader, undefined, "no real GLTFLoader in this headless env, same as a blocked CDN in production");
+
+  d.getElementById("label").value = "PART-1";
+  win.addPalletFromForm();
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData.model, "", "no model attached without a chosen file");
+  assert(p.material && p.material.opts, "item keeps its normal labeled-box material, not a broken/invisible one");
+
+  // Simulate a save file that already recorded a model (e.g. made on a machine
+  // where GLTFLoader loaded): normalizePallet must still produce a valid item.
+  const restored = win.normalizePallet({ label: "PART-2", model: "data:model/gltf-binary;base64,AAAA" });
+  eq(restored.model, "data:model/gltf-binary;base64,AAAA", "model data preserved through normalization");
+  const mesh = win.makePalletMesh(restored);
+  assert(mesh.geometry, "mesh still gets a normal box hitbox even though gltfLoader is unavailable");
+});
+
+test("dataUrlToArrayBuffer round-trips known base64 content", () => {
+  const win = boot();
+  const buf = win.dataUrlToArrayBuffer("data:application/octet-stream;base64,aGVsbG8=");
+  const bytes = new Uint8Array(buf);
+  const text = String.fromCharCode.apply(null, bytes);
+  eq(text, "hello", "decoded bytes match the original base64 payload");
+});
+
+test("save/load round trip preserves an attached model reference", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("label").value = "PART-3";
+  win.addPalletFromForm();
+  win.state.trailers[0].pallets[0].userData.model = "data:model/gltf-binary;base64,AAAA";
+
+  const snap = JSON.parse(JSON.stringify(win.serialize()));
+  eq(snap.trailers[0].pallets[0].model, "data:model/gltf-binary;base64,AAAA", "model field serialized");
+});
+
 test("removing a trailer disposes its cargo and keeps at least one trailer", () => {
   const win = boot();
   win.addNewTrailer();

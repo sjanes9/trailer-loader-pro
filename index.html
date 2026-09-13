@@ -229,6 +229,14 @@
       <img id="photoPreview" class="pallet-thumb" alt="Selected photo">
       <button type="button" class="warn-btn" id="btnClearPhoto">Remove photo</button>
     </div>
+    <label>3D Model (optional, .glb)</label>
+    <div class="row">
+      <div><button type="button" class="util-btn" id="btnLoadModel">Load .glb Model</button></div>
+      <div><button type="button" class="warn-btn" id="btnClearModel">Remove Model</button></div>
+    </div>
+    <input type="file" id="modelFile" accept=".glb,model/gltf-binary" style="display:none">
+    <p class="hint" id="modelStatus"></p>
+    <p class="hint">Loads the real part shape in place of a plain box, scaled to fit the Len/Wid/Hgt above. Export as .glb (binary glTF) from your 3D/CAD/scanning app.</p>
     <label>Notes</label><textarea id="Notes" rows="2" placeholder="Handling notes, PO number, contents..."></textarea>
     <button id="btnAdd">Add to trailer</button>
     <button class="update-btn" id="btnUpdate">Update selection</button>
@@ -281,6 +289,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/DragControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
 <script>
@@ -291,7 +300,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.8.1";
+var APP_VERSION = "2.9.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -317,6 +326,9 @@ var state = {
   shipment: {}
 };
 var pendingPhotoRemoval = false;
+var gltfLoader;
+var pendingModelDataUrl = "";
+var pendingModelRemoval = false;
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -374,6 +386,11 @@ function init() {
   var container = $("container");
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1a);
+
+  /* Optional: 3D model loading degrades gracefully if this CDN script
+     didn't load (blocked network, offline/air-gapped use) -- items just
+     keep their plain-box look instead. */
+  if (typeof THREE.GLTFLoader === "function") gltfLoader = new THREE.GLTFLoader();
 
   camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 8000);
   camera.position.set(1000, 800, 1000);
@@ -468,6 +485,10 @@ function wireUI() {
   $("palletImg").onchange = onPhotoFileChosen;
   $("palletImgCapture").onchange = onPhotoFileChosen;
   $("btnClearPhoto").onclick = clearPhotoSelection;
+
+  $("btnLoadModel").onclick = function () { $("modelFile").click(); };
+  $("modelFile").onchange = onModelFileChosen;
+  $("btnClearModel").onclick = clearModelSelection;
 
   $("btnAdd").onclick = function () { addPalletFromForm(); };
   $("btnUpdate").onclick = updatePallet;
@@ -1019,6 +1040,130 @@ function showExistingPhoto(img) {
   }
 }
 
+/* ------------------------------ 3D model loading ------------------------------ */
+
+/* A loaded model is stored as a base64 data URL (same trick already used
+   for photos) so it round-trips through the plain-JSON save file. It's
+   parsed with GLTFLoader and attached as a child of the cargo item's box
+   hitbox -- the box itself stays the thing drag/clamp/collision reason
+   about, same pattern as the pallet-deck/tote-rim decorations. */
+function dataUrlToArrayBuffer(dataUrl) {
+  var base64 = String(dataUrl || "").split(",")[1] || "";
+  var binary = atob(base64);
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function disposeObjectTree(obj) {
+  obj.traverse(function (node) {
+    if (node.geometry) node.geometry.dispose();
+    disposeMaterial(node.material);
+  });
+}
+
+/* Recenters the loaded scene on its own bounding-box center (in an inner
+   node, so the offset isn't itself scaled), then scales an outer root to
+   fit the target box exactly on each axis. Returns that root, with the
+   model's natural (pre-scale) size stashed on it so a later resize/rotate
+   can rescale without re-parsing the file. */
+function fitModelToBox(sceneObj, targetL, targetH, targetW) {
+  var box = new THREE.Box3().setFromObject(sceneObj);
+  var size = new THREE.Vector3(); box.getSize(size);
+  var center = new THREE.Vector3(); box.getCenter(center);
+  sceneObj.position.set(-center.x, -center.y, -center.z);
+
+  var root = new THREE.Object3D();
+  root.add(sceneObj);
+  root.userData.naturalSize = size.clone();
+  root.scale.set(
+    size.x > 1e-6 ? targetL / size.x : 1,
+    size.y > 1e-6 ? targetH / size.y : 1,
+    size.z > 1e-6 ? targetW / size.z : 1
+  );
+  return root;
+}
+
+function rescaleModelRoot(d) {
+  var root = d._modelRoot;
+  if (!root || !root.userData.naturalSize) return;
+  var size = root.userData.naturalSize;
+  root.scale.set(
+    size.x > 1e-6 ? effectiveL(d) / size.x : 1,
+    size.y > 1e-6 ? effectiveH(d) / size.y : 1,
+    size.z > 1e-6 ? effectiveW(d) / size.z : 1
+  );
+}
+
+function applyModelHitboxMaterial(mesh) {
+  disposeMaterial(mesh.material);
+  mesh.material = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.03 });
+}
+
+function clearModelFromMesh(mesh) {
+  var d = mesh.userData;
+  if (!d._modelRoot) return;
+  disposeObjectTree(d._modelRoot);
+  mesh.remove(d._modelRoot);
+  d._modelRoot = null;
+}
+
+/* Attempts to attach a real model; on success it clears the deck/rim
+   decoration and hides the plain box (so only the real shape shows), and
+   on failure or if GLTFLoader never loaded, silently leaves the item as a
+   normal labeled box -- never a broken/invisible item. */
+function attachModelToMesh(mesh, d) {
+  if (!gltfLoader || !d.model) return;
+  var buffer;
+  try { buffer = dataUrlToArrayBuffer(d.model); }
+  catch (e) { return; }
+  gltfLoader.parse(buffer, "", function (gltf) {
+    clearCargoDecoration(mesh);
+    applyModelHitboxMaterial(mesh);
+    var root = fitModelToBox(gltf.scene, effectiveL(d), effectiveH(d), effectiveW(d));
+    mesh.add(root);
+    d._modelRoot = root;
+  }, function () {
+    toast('Could not load the 3D model for "' + d.label + '". Showing a plain box instead.', "err");
+  });
+}
+
+function onModelFileChosen() {
+  var file = $("modelFile").files && $("modelFile").files[0];
+  if (!file) return;
+  if (!gltfLoader) {
+    toast("3D model support did not load. Check your connection and reload.", "err");
+    $("modelFile").value = "";
+    return;
+  }
+  var fr = new FileReader();
+  fr.onload = function (e) {
+    pendingModelDataUrl = String(e.target.result || "");
+    pendingModelRemoval = false;
+    $("modelFile").value = "";
+    $("modelStatus").textContent = "Model ready: " + file.name + " (attaches on Add/Update).";
+  };
+  fr.onerror = function () {
+    toast("Could not read that model file.", "err");
+    $("modelFile").value = "";
+  };
+  fr.readAsDataURL(file);
+}
+
+function clearModelSelection() {
+  pendingModelDataUrl = "";
+  pendingModelRemoval = true;
+  $("modelFile").value = "";
+  $("modelStatus").textContent = "Model will be removed on Add/Update.";
+}
+
+function showExistingModelStatus(d) {
+  pendingModelDataUrl = "";
+  pendingModelRemoval = false;
+  $("modelFile").value = "";
+  $("modelStatus").textContent = d.model ? "Model attached." : "";
+}
+
 /* ------------------------------ pallets ------------------------------ */
 
 function makeLabelMaterial(text, bgColor) {
@@ -1056,6 +1201,7 @@ function normalizePallet(d) {
     weight: num(d.weight, 0), value: num(d.value, 0),
     notes: String(d.notes || ""),
     img: typeof d.img === "string" ? d.img : "",
+    model: typeof d.model === "string" ? d.model : "",
     color: typeof d.color === "string" && d.color ? d.color : randomColor(),
     pos: { x: num(pos.x, 24), y: num(pos.y, 24), z: num(pos.z, 20) }
   };
@@ -1147,6 +1293,7 @@ function makePalletMesh(data) {
   mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
   mesh.userData = d;
   addCargoDecoration(mesh, d);
+  if (d.model) attachModelToMesh(mesh, d);
   return mesh;
 }
 
@@ -1177,8 +1324,12 @@ function addPalletFromForm() {
     weight: num($("Weight").value, 0), value: num($("Value").value, 0),
     notes: $("Notes").value,
     img: "",
+    model: pendingModelDataUrl || "",
     pos: { x: Math.min(24 + num($("L").value, 48) / 2, t.dims.l), y: num($("H").value, 48) / 2, z: t.dims.w / 2 }
   };
+  pendingModelDataUrl = "";
+  pendingModelRemoval = false;
+  $("modelStatus").textContent = "";
 
   if (d.l <= 0 || d.w <= 0 || d.h <= 0) { toast("Pallet dimensions must be greater than zero.", "err"); return; }
 
@@ -1268,11 +1419,11 @@ function updatePallet() {
     p.geometry.dispose();
     p.geometry = new THREE.BoxGeometry(effectiveL(d), effectiveH(d), effectiveW(d));
   }
-  if (labelChanged) {
+  if (labelChanged && !d.model) {
     disposeMaterial(p.material);
     p.material = makeLabelMaterial(d.label, d.color);
   }
-  if (sizeChanged || typeChanged) refreshCargoDecoration(p);
+  if ((sizeChanged || typeChanged) && !d.model) refreshCargoDecoration(p);
 
   var file = pickedPhotoFile();
   if (file) {
@@ -1282,6 +1433,23 @@ function updatePallet() {
   } else if (pendingPhotoRemoval) {
     d.img = "";
     pendingPhotoRemoval = false;
+  }
+
+  if (pendingModelDataUrl) {
+    clearModelFromMesh(p);
+    d.model = pendingModelDataUrl;
+    pendingModelDataUrl = "";
+    $("modelStatus").textContent = "";
+    attachModelToMesh(p, d);
+  } else if (pendingModelRemoval) {
+    clearModelFromMesh(p);
+    d.model = "";
+    pendingModelRemoval = false;
+    disposeMaterial(p.material);
+    p.material = makeLabelMaterial(d.label, d.color);
+    addCargoDecoration(p, d);
+  } else if (d.model && sizeChanged) {
+    rescaleModelRoot(d);
   }
 
   if (t && shelfChanged && newShelfId) {
@@ -1307,7 +1475,7 @@ function rotatePallet() {
   var swap2 = d.l2; d.l2 = d.w2; d.w2 = swap2;
   p.geometry.dispose();
   p.geometry = new THREE.BoxGeometry(effectiveL(d), effectiveH(d), effectiveW(d));
-  refreshCargoDecoration(p);
+  if (d.model) rescaleModelRoot(d); else refreshCargoDecoration(p);
   clampToTrailer(p);
   resolveCollisions(p);
   fillSidebarForm(d);
@@ -1340,10 +1508,7 @@ function removePallet(p) {
 
 function disposeMesh(m) {
   scene.remove(m);
-  (m.children || []).slice().forEach(function (c) {
-    if (c.geometry) c.geometry.dispose();
-    disposeMaterial(c.material);
-  });
+  (m.children || []).slice().forEach(disposeObjectTree);
   if (m.geometry) m.geometry.dispose();
   disposeMaterial(m.material);
 }
@@ -1377,6 +1542,7 @@ function fillSidebarForm(d) {
   $("Value").value = d.value;
   $("Notes").value = d.notes || "";
   showExistingPhoto(d.img || "");
+  showExistingModelStatus(d);
 }
 
 function updateSelectionUI() {
@@ -1598,6 +1764,7 @@ function updateManifest() {
     title.textContent = d.label;
 
     var typeLabel = itemTypeLabel(d);
+    if (d.model) typeLabel += " [3D model]";
     if (d.shelfId) typeLabel += " → Shelf " + d.shelfId;
 
     var meta = document.createElement("div");
@@ -1764,7 +1931,7 @@ function serialize() {
             partCount: d.partCount, customType: d.customType,
             l: d.l, w: d.w, h: d.h, l2: d.l2, w2: d.w2, h2: d.h2,
             weight: d.weight, value: d.value, notes: d.notes,
-            img: d.img, color: d.color,
+            img: d.img, model: d.model, color: d.color,
             pos: { x: p.position.x, y: p.position.y, z: p.position.z }
           };
         }),
