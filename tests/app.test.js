@@ -155,6 +155,33 @@ test("app boots and creates one trailer", () => {
   assert(/^v\d+\.\d+\.\d+$/.test(win.document.getElementById("verLabel").textContent), "version label not stamped");
 });
 
+test("box truck presets are grouped, and selecting one fills dims and payload cap", () => {
+  const win = boot();
+  const d = win.document;
+  const sel = d.getElementById("trailerPreset");
+
+  const optgroups = Array.from(sel.querySelectorAll("optgroup")).map((g) => g.label);
+  assert(optgroups.includes("U-Haul box trucks"), "U-Haul options grouped under their own optgroup");
+  assert(optgroups.includes("Penske box trucks"), "Penske options grouped under their own optgroup");
+
+  sel.value = "uhaul26";
+  win.onPresetChange();
+  eq(Number(d.getElementById("tL").value), win.round2(314 / 12), "U-Haul 26 ft length applied (in feet)");
+  eq(Number(d.getElementById("tW").value), win.round2(98 / 12), "U-Haul 26 ft width applied");
+  eq(Number(d.getElementById("tMaxWeight").value), 12859, "U-Haul 26 ft published max load applied as payload cap");
+
+  sel.value = "penske12";
+  win.onPresetChange();
+  eq(Number(d.getElementById("tL").value), win.round2(144 / 12), "Penske 12 ft length applied");
+  eq(Number(d.getElementById("tMaxWeight").value), 3100, "Penske 12 ft published max load applied as payload cap");
+
+  // Existing non-truck presets never carried a maxWeight and must stay that way.
+  d.getElementById("tMaxWeight").value = "45000";
+  sel.value = "van53";
+  win.onPresetChange();
+  eq(d.getElementById("tMaxWeight").value, "45000", "dry van preset leaves the payload cap untouched, same as before");
+});
+
 test("adding a pallet updates the 3D scene, manifest and totals", () => {
   const win = boot();
   win.document.getElementById("label").value = "P-1";

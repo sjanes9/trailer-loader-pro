@@ -2,6 +2,19 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.10.0] - 2026-09-14
+
+### Added
+
+- Nine **box truck presets** in the Trailer Preset dropdown, grouped under
+  "U-Haul box trucks" and "Penske box trucks": U-Haul 10/15/20/26/29 ft and
+  Penske 12/16/22/26 ft. Interior dimensions and published max load are
+  sourced from Penske's and U-Haul's own rental spec pages (checked
+  2026-09-14) -- like every other preset, they're nominal starting points,
+  not a guarantee for a specific vehicle. Selecting one now also fills Max
+  Payload with that truck's published load capacity; existing presets that
+  never carried a payload figure still leave it untouched, as before.
+
 ## [2.9.0] - 2026-09-12
 
 ### Added

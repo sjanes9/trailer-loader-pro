@@ -300,19 +300,32 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.9.0";
+var APP_VERSION = "2.10.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
 var UPDATE_CHECK_MS = 5 * 60 * 1000;
 
 /* Nominal interior dimensions in inches. Starting points, not spec values. */
+/* Box truck interior dims/payload are sourced from Penske's and U-Haul's own
+   published specs (pensketruckrental.com and uhaul.com, checked 2026-09-14).
+   Like every preset here, they're nominal starting points -- the app's
+   existing hint already says to confirm against the actual vehicle. */
 var PRESETS = [
-  { id: "van53",  name: "53 ft dry van",   l: 636, w: 102, h: 110 },
-  { id: "van48",  name: "48 ft dry van",   l: 576, w: 102, h: 110 },
-  { id: "cont40", name: "40 ft container", l: 474, w: 92,  h: 94  },
-  { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94  },
-  { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102 },
+  { id: "van53",  name: "53 ft dry van",   l: 636, w: 102, h: 110, group: "Semi trailers & containers" },
+  { id: "van48",  name: "48 ft dry van",   l: 576, w: 102, h: 110, group: "Semi trailers & containers" },
+  { id: "cont40", name: "40 ft container", l: 474, w: 92,  h: 94,  group: "Semi trailers & containers" },
+  { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94,  group: "Semi trailers & containers" },
+  { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102, group: "Semi trailers & containers" },
+  { id: "uhaul10", name: "U-Haul 10 ft truck", l: 119, w: 75, h: 73,  maxWeight: 2850,  group: "U-Haul box trucks" },
+  { id: "uhaul15", name: "U-Haul 15 ft truck", l: 180, w: 92, h: 86,  maxWeight: 6385,  group: "U-Haul box trucks" },
+  { id: "uhaul20", name: "U-Haul 20 ft truck", l: 234, w: 92, h: 86,  maxWeight: 5700,  group: "U-Haul box trucks" },
+  { id: "uhaul26", name: "U-Haul 26 ft truck", l: 314, w: 98, h: 99,  maxWeight: 12859, group: "U-Haul box trucks" },
+  { id: "uhaul29", name: "U-Haul 29 ft truck", l: 350, w: 97, h: 105, maxWeight: 11939, group: "U-Haul box trucks" },
+  { id: "penske12", name: "Penske 12 ft truck", l: 144, w: 78, h: 73, maxWeight: 3100,  group: "Penske box trucks" },
+  { id: "penske16", name: "Penske 16 ft truck", l: 192, w: 91, h: 78, maxWeight: 4300,  group: "Penske box trucks" },
+  { id: "penske22", name: "Penske 22 ft truck", l: 263, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks" },
+  { id: "penske26", name: "Penske 26 ft truck", l: 311, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks" },
   { id: "custom", name: "Custom",          l: 0,   w: 0,   h: 0   }
 ];
 
@@ -432,12 +445,22 @@ function init() {
 function buildPresetOptions() {
   var sel = $("trailerPreset");
   sel.innerHTML = "";
+  var groups = {};
   PRESETS.forEach(function (p) {
     var o = document.createElement("option");
     o.value = p.id;
     o.textContent = p.id === "custom" ? p.name :
       p.name + " (" + round2(p.l / IN_PER_FT) + " x " + round2(p.w / IN_PER_FT) + " x " + round2(p.h / IN_PER_FT) + " ft)";
-    sel.appendChild(o);
+    var parent = sel;
+    if (p.group) {
+      if (!groups[p.group]) {
+        groups[p.group] = document.createElement("optgroup");
+        groups[p.group].label = p.group;
+        sel.appendChild(groups[p.group]);
+      }
+      parent = groups[p.group];
+    }
+    parent.appendChild(o);
   });
 }
 
@@ -717,6 +740,7 @@ function onPresetChange() {
   var p = PRESETS.filter(function (x) { return x.id === $("trailerPreset").value; })[0];
   if (!p || p.id === "custom") return;
   $("tL").value = round2(p.l / IN_PER_FT); $("tW").value = round2(p.w / IN_PER_FT); $("tH").value = round2(p.h / IN_PER_FT);
+  if (p.maxWeight) $("tMaxWeight").value = p.maxWeight;
 }
 
 function applyTrailerSettings() {
