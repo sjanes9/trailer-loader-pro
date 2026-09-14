@@ -300,7 +300,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.10.0";
+var APP_VERSION = "2.10.1";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -1282,14 +1282,6 @@ function addCargoDecoration(mesh, d) {
     var deck = new THREE.Mesh(new THREE.BoxGeometry(l, deckH, w), deckMat);
     deck.position.set(0, -h / 2 + deckH / 2, 0);
     mesh.add(deck);
-
-    var loadMat = new THREE.MeshPhongMaterial({ color: 0xd8c9a3 });
-    var lw = l * 0.4, lh = h * 0.4, ld = w * 0.4;
-    [[-l * 0.18, w * 0.15], [l * 0.18, -w * 0.15]].forEach(function (o) {
-      var box = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), loadMat);
-      box.position.set(o[0], h / 2 - lh / 2 + deckH, o[1]);
-      mesh.add(box);
-    });
   } else if (d.itemType === "tote") {
     var lipMat = new THREE.MeshPhongMaterial({ color: 0x2c3e50 });
     var lip = new THREE.Mesh(new THREE.BoxGeometry(l, Math.max(3, h * 0.08), w), lipMat);

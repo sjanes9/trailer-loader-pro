@@ -2,6 +2,15 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.10.1] - 2026-09-14
+
+### Changed
+
+- Removed the two decorative "load" boxes on Pallet-type cargo. From
+  certain camera angles they read as loose boxes floating beside the
+  pallet rather than goods sitting on it. The wood-colored deck plate
+  stays.
+
 ## [2.10.0] - 2026-09-14
 
 ### Added
