@@ -835,6 +835,72 @@ test("a shelving unit can be rotated and deleted like cargo, from its buttons or
   eq(t.pallets.length, 1, "the cargo itself is untouched");
 });
 
+test("cargo that isn't assigned to a shelving unit can't be dragged into it -- units are solid to floor cargo", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfL").value = "48"; d.getElementById("shelfW").value = "24"; d.getElementById("shelfH").value = "72";
+  d.getElementById("shelfPosX").value = "100"; d.getElementById("shelfPosZ").value = "60";
+  win.addShelvesFromForm();
+  const t = win.state.trailers[0];
+  const unit = t.fixtures[0].hitbox;
+
+  d.getElementById("L").value = "20"; d.getElementById("W").value = "20"; d.getElementById("H").value = "30";
+  win.addPalletFromForm();
+  const cargo = t.pallets[0];
+
+  // Drop it well inside the unit (the way a drag would), then resolve as the drag handler does.
+  cargo.position.set(unit.position.x + 2, 15, unit.position.z + 1);
+  win.clampToTrailer(cargo);
+  win.resolveCollisions(cargo);
+  const overlaps = Math.abs(cargo.position.x - unit.position.x) < 24 + 10 &&
+                   Math.abs(cargo.position.y - unit.position.y) < 36 + 15 &&
+                   Math.abs(cargo.position.z - unit.position.z) < 12 + 10;
+  assert(!overlaps, "cargo was pushed out of the unit instead of merging into it");
+});
+
+test("cargo assigned to a unit may sit inside it, and dragging it out releases the assignment", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfL").value = "48"; d.getElementById("shelfW").value = "24"; d.getElementById("shelfH").value = "72";
+  win.addShelvesFromForm();
+  d.getElementById("L").value = "20"; d.getElementById("W").value = "20"; d.getElementById("H").value = "30";
+  d.getElementById("cargoShelfId").value = "1";
+  win.addPalletFromForm();
+  const t = win.state.trailers[0];
+  const unit = t.fixtures[0].hitbox;
+  const cargo = t.pallets[0];
+  const inside = () => Math.abs(cargo.position.x - unit.position.x) < 34 &&
+                       Math.abs(cargo.position.z - unit.position.z) < 22;
+
+  win.resolveCollisions(cargo);
+  assert(inside(), "assigned cargo is left where it is, over its own unit");
+  win.releaseFromShelfIfMoved(cargo);
+  eq(cargo.userData.shelfId, "1", "still on the shelf while it overlaps the unit");
+
+  cargo.position.set(unit.position.x + 200, 15, unit.position.z);
+  win.releaseFromShelfIfMoved(cargo);
+  eq(cargo.userData.shelfId, "", "moved clear of the unit -> back to the floor");
+});
+
+test("a shelving unit can't be dragged through floor cargo either", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfL").value = "48"; d.getElementById("shelfW").value = "24"; d.getElementById("shelfH").value = "72";
+  win.addShelvesFromForm();
+  d.getElementById("L").value = "20"; d.getElementById("W").value = "20"; d.getElementById("H").value = "30";
+  win.addPalletFromForm();
+  const t = win.state.trailers[0];
+  const unit = t.fixtures[0].hitbox;
+  const cargo = t.pallets[0];
+  cargo.position.set(300, 15, 60);
+  unit.position.set(305, 36, 62);
+  win.resolveFixtureCollisions(unit);
+  const overlaps = Math.abs(cargo.position.x - unit.position.x) < 34 &&
+                   Math.abs(cargo.position.y - unit.position.y) < 51 &&
+                   Math.abs(cargo.position.z - unit.position.z) < 22;
+  assert(!overlaps, "the unit was pushed clear of the cargo");
+});
+
 test("removing a shelving unit clears the assignment on cargo that referenced it", () => {
   const win = boot();
   const d = win.document;

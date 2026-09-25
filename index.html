@@ -315,7 +315,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.12.1";
+var APP_VERSION = "2.12.2";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -910,6 +910,7 @@ function addShelvesFromForm() {
   hitbox.userData = fixture;
   t.fixtures.push(fixture);
   clampToTrailer(hitbox);
+  resolveFixtureCollisions(hitbox);
 
   refreshShelfOptions();
   updateFixtureList();
@@ -979,6 +980,7 @@ function rebuildFixture(f, l, w, totalH, newPos) {
   f.l = l; f.w = w; f.totalH = totalH; f.pos = newPos; f.hitbox = hitbox;
   hitbox.userData = f;
   clampToTrailer(hitbox);
+  resolveFixtureCollisions(hitbox);
 
   t.pallets.forEach(function (p) {
     var levelIndex = f.levels.indexOf(p.userData.shelfId);
@@ -1785,11 +1787,63 @@ function setupDragControls() {
   dragControls.addEventListener("dragend", function (e) {
     orbit.enabled = true;
     syncPosition(e.object);
+    releaseFromShelfIfMoved(e.object);
     updateManifest();
   });
 
   renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+  renderer.domElement.removeEventListener("pointerdown", arbitratePick, true);
+  renderer.domElement.addEventListener("pointerdown", arbitratePick, true);
+}
+
+/* Cargo dragged out of the unit it was assigned to goes back to "None (floor)",
+   so the unit doesn't yank it back the next time the unit moves. */
+function releaseFromShelfIfMoved(p) {
+  var t = currentTrailer();
+  var d = p.userData;
+  if (!t || !d.shelfId) return;
+  var match = findShelf(t, d.shelfId);
+  if (!match) return;
+  var hb = match.fixture.hitbox;
+  var a = halfDims(p), b = halfDims(hb);
+  /* Footprint only: cargo on a single-level unit rests on top of it, not within its height. */
+  var over = Math.abs(p.position.x - hb.position.x) < b.l + a.l &&
+             Math.abs(p.position.z - hb.position.z) < b.w + a.w;
+  if (over) return;
+  d.shelfId = "";
+  if (state.selected === p) $("cargoShelfId").value = "";
+  resolveCollisions(p);
+}
+
+/* Cargo and shelving units each have their own DragControls, and both would
+   grab the same click when cargo sits inside a unit -- dragging the two
+   together so they can never be pulled apart. Before either sees the click,
+   decide who owns it: cargo wins if it is in front of the unit or inside its
+   bounds; otherwise the unit does (cargo merely visible behind it). */
+function arbitratePick(ev) {
+  if (state.deleteMode || !dragControls || !fixtureDragControls) return;
+  var t = currentTrailer();
+  if (!t) return;
+  var rect = renderer.domElement.getBoundingClientRect();
+  var ndc = new THREE.Vector2(
+    ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+    -((ev.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  var rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  var cargoHit = rc.intersectObjects(t.pallets, false)[0];
+  var fixtureHit = rc.intersectObjects(t.fixtures.map(function (f) { return f.hitbox; }), false)[0];
+  var cargoWins = !!cargoHit;
+  if (cargoHit && fixtureHit) {
+    var hb = fixtureHit.object, hd = halfDims(hb), pt = cargoHit.point;
+    var inside = Math.abs(pt.x - hb.position.x) <= hd.l + 0.01 &&
+                 Math.abs(pt.y - hb.position.y) <= hd.h + 0.01 &&
+                 Math.abs(pt.z - hb.position.z) <= hd.w + 0.01;
+    cargoWins = cargoHit.distance <= fixtureHit.distance || inside;
+  }
+  dragControls.enabled = cargoWins || !fixtureHit;
+  fixtureDragControls.enabled = !cargoWins;
 }
 
 /* Shelving units drag independently of cargo -- their own DragControls
@@ -1807,7 +1861,10 @@ function setupFixtureDragControls() {
     orbit.enabled = false;
     selectFixture(e.object.userData);
   });
-  fixtureDragControls.addEventListener("drag", function (e) { clampToTrailer(e.object); });
+  fixtureDragControls.addEventListener("drag", function (e) {
+    clampToTrailer(e.object);
+    resolveFixtureCollisions(e.object);
+  });
   fixtureDragControls.addEventListener("dragend", function (e) {
     orbit.enabled = true;
     syncPosition(e.object);
@@ -1859,24 +1916,51 @@ function clampToTrailer(p) {
   syncPosition(p);
 }
 
+/* Pushes p out of `other` along the axis it overlaps least. */
+function separateFrom(p, other) {
+  var a = halfDims(p);
+  var b = halfDims(other);
+  var dx = Math.abs(p.position.x - other.position.x);
+  var dy = Math.abs(p.position.y - other.position.y);
+  var dz = Math.abs(p.position.z - other.position.z);
+  if (dx < a.l + b.l && dy < a.h + b.h && dz < a.w + b.w) {
+    var ox = (a.l + b.l) - dx, oy = (a.h + b.h) - dy, oz = (a.w + b.w) - dz;
+    if (oy <= ox && oy <= oz) p.position.y += (p.position.y > other.position.y) ? oy : -oy;
+    else if (ox <= oz) p.position.x += (p.position.x > other.position.x) ? ox : -ox;
+    else p.position.z += (p.position.z > other.position.z) ? oz : -oz;
+  }
+}
+
+/* True when a cargo item is assigned to one of this unit's levels, i.e. it is
+   meant to sit inside the unit's bounds. */
+function isAssignedTo(p, fixture) {
+  return !!p.userData.shelfId && fixture.levels.indexOf(p.userData.shelfId) !== -1;
+}
+
+/* Cargo is solid to every shelving unit except the one it is assigned to
+   (assigned cargo lives inside its unit), and vice versa when a unit is moved. */
 function resolveCollisions(p) {
   var t = currentTrailer();
   if (!t) return;
-  var a = halfDims(p);
   t.pallets.forEach(function (other) {
-    if (other === p) return;
-    var b = halfDims(other);
-    var dx = Math.abs(p.position.x - other.position.x);
-    var dy = Math.abs(p.position.y - other.position.y);
-    var dz = Math.abs(p.position.z - other.position.z);
-    if (dx < a.l + b.l && dy < a.h + b.h && dz < a.w + b.w) {
-      var ox = (a.l + b.l) - dx, oy = (a.h + b.h) - dy, oz = (a.w + b.w) - dz;
-      if (oy <= ox && oy <= oz) p.position.y += (p.position.y > other.position.y) ? oy : -oy;
-      else if (ox <= oz) p.position.x += (p.position.x > other.position.x) ? ox : -ox;
-      else p.position.z += (p.position.z > other.position.z) ? oz : -oz;
-    }
+    if (other !== p) separateFrom(p, other);
+  });
+  (t.fixtures || []).forEach(function (f) {
+    if (!isAssignedTo(p, f)) separateFrom(p, f.hitbox);
   });
   syncPosition(p);
+}
+
+function resolveFixtureCollisions(hitbox) {
+  var t = currentTrailer();
+  if (!t) return;
+  t.pallets.forEach(function (p) {
+    if (!isAssignedTo(p, hitbox.userData)) separateFrom(hitbox, p);
+  });
+  (t.fixtures || []).forEach(function (f) {
+    if (f.hitbox !== hitbox) separateFrom(hitbox, f.hitbox);
+  });
+  syncPosition(hitbox);
 }
 
 /* ------------------------------ manifest ------------------------------ */

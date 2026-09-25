@@ -2,6 +2,19 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.12.2] - 2026-09-25
+
+### Fixed
+
+- **Cargo could be dragged into a shelving unit and got stuck there.** Units
+  are now solid to cargo that isn't assigned to them (and to each other), so
+  a dragged item is pushed out instead of merging in, and a unit dragged onto
+  floor cargo is pushed clear too. Cargo and units also no longer both grab
+  the same click: when an item sits inside or in front of a unit, dragging
+  it moves only the item. Dragging an item that is assigned to a shelf out of
+  its unit now releases the assignment (back to "None (floor)"), so the unit
+  doesn't pull it back the next time it moves.
+
 ## [2.12.1] - 2026-09-25
 
 ### Fixed
