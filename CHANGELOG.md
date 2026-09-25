@@ -2,6 +2,32 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.12.0] - 2026-09-25
+
+### Added
+
+- **Shelving units can be rotated and deleted, not just updated.** Selecting
+  a unit (click/drag it, or click it in Trailer Fixtures) now shows
+  **Rotate 90** and **Delete Shelf** buttons under Update Shelf. The main
+  Selection panel's Rotate 90 / Delete selected buttons and the R and Delete
+  keys work on a selected unit too. Selecting a unit clears any cargo
+  selection and vice versa, so a key press can't hit the wrong thing.
+  Rotating swaps the unit's length and width and keeps assigned cargo on it.
+
+### Fixed
+
+- **Legs poked above the top shelf** (most obviously on a one-level unit,
+  where the shelf sat mid-height on legs that kept going). The top shelf is
+  now flush with the top of the unit and the legs stop just inside it, so
+  "Total hgt" means the height to the top shelf. Lower levels are spaced
+  evenly beneath it. This shifts levels slightly compared to before; cargo in
+  an older saved layout may sit a few inches off its shelf until you touch
+  the unit (Update Shelf re-seats it).
+- **Shelf labels were unreadable.** The label was a square texture crushed
+  onto the thin edge of the board. Each face is now drawn at its real
+  proportions: large lettering on the front and back edges, and on the top
+  and ends. Boards are 6 in thick (was 4) to give the lettering room.
+
 ## [2.11.0] - 2026-09-25
 
 ### Added

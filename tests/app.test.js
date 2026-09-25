@@ -734,6 +734,82 @@ test("Update Shelf resizes and repositions an existing unit, and its assigned ca
   eq(win.state.selectedFixture, updated, "unit stays selected after updating");
 });
 
+test("the top shelf is flush with the top of the unit, so legs never rise above it (even with one level)", () => {
+  const win = boot();
+  const T = win.SHELF_BOARD_T;
+  for (const count of [1, 2, 4]) {
+    const offsets = win.computeLevelOffsets(count, 72);
+    eq(offsets.length, count, count + " levels");
+    eq(offsets[count - 1] + T / 2, 36, "top board's upper surface sits exactly at the unit's top (count=" + count + ")");
+    for (let i = 1; i < count; i++) assert(offsets[i] > offsets[i - 1], "levels ascend");
+  }
+
+  const boxes = [];
+  const realBox = win.THREE.BoxGeometry;
+  win.THREE.BoxGeometry = function (w, h, d) { boxes.push([w, h, d]); return realBox(w, h, d); };
+  win.buildShelfUnit(["1"], 36, 18, 72, { x: 0, y: 36, z: 0 });
+  win.THREE.BoxGeometry = realBox;
+  const legs = boxes.filter((b) => b[0] === 4 && b[2] === 4);
+  assert(legs.length > 0 && legs.every((b) => b[1] <= 72), "a leg is never taller than the unit");
+  assert(legs.every((b) => b[1] < 72), "legs stop just inside the top board rather than poking past it");
+});
+
+test("a cargo item on a single-level shelf rests on the board at the top of the unit", () => {
+  const win = boot();
+  win.addShelvesFromForm();
+  const f = win.state.trailers[0].fixtures[0];
+  const rest = win.shelfRestPosition({ fixture: f, levelIndex: 0 }, 10);
+  eq(rest.y, f.pos.y + f.totalH / 2 + 5, "item sits on the top surface of the shelf, its center half its height above it");
+});
+
+test("shelf labels are drawn at the face's real proportions so the text isn't squashed", () => {
+  const win = boot();
+  const canvases = [];
+  const realTex = win.THREE.CanvasTexture;
+  win.THREE.CanvasTexture = function (c) { canvases.push(c); return realTex(c); };
+  win.makeShelfFaceMaterial("Shelf 1", 36, win.SHELF_BOARD_T);
+  win.THREE.CanvasTexture = realTex;
+  eq(canvases.length, 1, "one texture drawn");
+  eq(canvases[0].width / canvases[0].height, 36 / win.SHELF_BOARD_T, "canvas aspect matches the 36 x 6 in edge it wraps onto");
+});
+
+test("a shelving unit can be rotated and deleted like cargo, from its buttons or the shared Selection controls", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("shelfL").value = "60";
+  d.getElementById("shelfW").value = "20";
+  win.addShelvesFromForm();
+  const t = win.state.trailers[0];
+  const shelf = t.fixtures[0];
+  eq(d.getElementById("shelfSelRow").style.display, "none", "rotate/delete row hidden with nothing selected");
+
+  d.getElementById("L").value = "10"; d.getElementById("W").value = "10"; d.getElementById("H").value = "10";
+  d.getElementById("cargoShelfId").value = shelf.levels[0];
+  win.addPalletFromForm();
+  const cargo = t.pallets[0];
+
+  win.selectFixture(shelf);
+  eq(win.state.selected, null, "selecting a unit clears any cargo selection");
+  eq(d.getElementById("shelfSelRow").style.display, "", "rotate/delete row shown once a unit is selected");
+  assert(/shelving unit/.test(d.getElementById("selectionNotice").textContent), "Selection panel names the unit");
+
+  win.rotateSelection();
+  eq(t.fixtures[0].l, 20, "rotate swaps length...");
+  eq(t.fixtures[0].w, 60, "...and width");
+  eq(cargo.position.x, t.fixtures[0].pos.x, "assigned cargo stays on the rotated unit");
+  eq(win.state.selectedFixture, t.fixtures[0], "unit stays selected after rotating");
+
+  win.selectPallet(cargo);
+  eq(win.state.selectedFixture, null, "selecting cargo clears the unit selection, so R/Delete can't hit the wrong thing");
+
+  win.selectFixture(t.fixtures[0]);
+  win.deleteSelection();
+  eq(t.fixtures.length, 0, "Delete removes the selected unit");
+  eq(win.state.selectedFixture, null, "and clears the selection");
+  eq(cargo.userData.shelfId, "", "cargo that was on it is unassigned");
+  eq(t.pallets.length, 1, "the cargo itself is untouched");
+});
+
 test("removing a shelving unit clears the assignment on cargo that referenced it", () => {
   const win = boot();
   const d = win.document;

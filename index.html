@@ -188,6 +188,10 @@
       <div><button class="util-btn" id="btnAddShelves">Add Shelving Unit</button></div>
       <div><button class="update-btn" id="btnUpdateShelf" style="display:none">Update Shelf</button></div>
     </div>
+    <div class="row" id="shelfSelRow" style="display:none">
+      <div><button class="util-btn" id="btnRotateShelf">Rotate 90</button></div>
+      <div><button class="warn-btn" id="btnDeleteShelf">Delete Shelf</button></div>
+    </div>
     <p class="hint">Levels = how many individually assignable shelves this one unit has, stacked top to bottom. Click a unit (in the 3D view or in Trailer Fixtures below) to select it, then adjust its size or position here and click Update Shelf -- or just drag it in the 3D view to reposition it directly. Any cargo assigned to a unit follows it. Units are fixtures, not cargo: they don't count toward weight, value or floor-use stats.</p>
   </div>
 
@@ -311,7 +315,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.11.0";
+var APP_VERSION = "2.12.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -510,6 +514,8 @@ function wireUI() {
 
   $("btnAddShelves").onclick = addShelvesFromForm;
   $("btnUpdateShelf").onclick = updateSelectedShelf;
+  $("btnRotateShelf").onclick = rotateSelectedShelf;
+  $("btnDeleteShelf").onclick = deleteSelectedShelf;
   $("shelfSide").onchange = onShelfSideChange;
   $("shelfEnd").onchange = onShelfEndChange;
 
@@ -527,9 +533,9 @@ function wireUI() {
 
   $("btnAdd").onclick = function () { addPalletFromForm(); };
   $("btnUpdate").onclick = updatePallet;
-  $("btnRotate").onclick = rotatePallet;
+  $("btnRotate").onclick = rotateSelection;
   $("btnDuplicate").onclick = duplicatePallet;
-  $("btnDeleteSel").onclick = function () { removePallet(state.selected); };
+  $("btnDeleteSel").onclick = deleteSelection;
   $("delToggle").onclick = toggleDelete;
 
   $("sidebarToggle").onclick = toggleSidebar;
@@ -556,9 +562,9 @@ function onResize() {
 function onKeyDown(e) {
   var tag = (e.target && e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select") return;
-  if (e.key === "r" || e.key === "R") rotatePallet();
+  if (e.key === "r" || e.key === "R") rotateSelection();
   else if (e.key === "d" || e.key === "D") duplicatePallet();
-  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removePallet(state.selected); }
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); }
   else if (e.key === "Escape") { selectPallet(null); deselectFixture(); }
   else if (e.key === "[") toggleSidebar();
   else if (e.key === "]") toggleManifest();
@@ -790,10 +796,35 @@ function applyTrailerSettings() {
    hitbox itself is a faint translucent box: visible (so its children
    render -- an invisible parent hides its whole subtree) but unobtrusive,
    and it doubles as a visual outline of the unit's draggable footprint. */
+var SHELF_BOARD_T = 6;
+
+/* Levels are spaced evenly with the TOP board's upper surface flush with the
+   top of the unit, so "Total hgt" is the height to the top shelf and the
+   legs never stick up past it (a single-level unit is one shelf on top of
+   full-height legs). Returns each board's center, relative to the unit's
+   own center. */
 function computeLevelOffsets(count, totalH) {
   var arr = [];
-  for (var i = 0; i < count; i++) arr.push(-totalH / 2 + totalH * (i + 0.5) / count);
+  for (var i = 0; i < count; i++) arr.push(-totalH / 2 + totalH * (i + 1) / count - SHELF_BOARD_T / 2);
   return arr;
+}
+
+/* Text drawn at a fixed 8 px per inch on a canvas matching the face's real
+   proportions, so the lettering is never squashed or stretched -- the old
+   square label texture got crushed onto the thin edge of the board. */
+function makeShelfFaceMaterial(text, widthIn, heightIn) {
+  var cw = Math.min(1024, Math.max(96, Math.round(widthIn * 8)));
+  var ch = Math.min(1024, Math.max(32, Math.round(heightIn * 8)));
+  var canvas = document.createElement("canvas");
+  canvas.width = cw; canvas.height = ch;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#e6d3a3"; ctx.fillRect(0, 0, cw, ch);
+  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, cw - 3, ch - 3);
+  var s = String(text || "");
+  var fontPx = Math.floor(Math.min(ch * 0.7, (cw * 0.9) / (Math.max(s.length, 1) * 0.62)));
+  ctx.fillStyle = "#1a1a1a"; ctx.font = "bold " + fontPx + "px Arial"; ctx.textAlign = "center";
+  ctx.fillText(s, cw / 2, ch / 2 + fontPx * 0.35);
+  return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
 function computeLevelLabels(startLabel, count) {
@@ -814,17 +845,25 @@ function buildShelfUnit(levels, l, w, totalH, pos) {
   var postMat = new THREE.MeshPhongMaterial({ color: 0x8a8f94 });
   var boardMat = new THREE.MeshPhongMaterial({ color: 0xb08d57 });
 
+  /* Legs run from the floor of the unit to just inside the top board, so
+     nothing pokes above the highest shelf. */
   var halfL = Math.max(l / 2 - 2, 1), halfW = Math.max(w / 2 - 2, 1);
-  var postGeom = new THREE.BoxGeometry(4, totalH, 4);
+  var legH = Math.max(totalH - 1, 1);
+  var postGeom = new THREE.BoxGeometry(4, legH, 4);
   [[halfL, halfW], [halfL, -halfW], [-halfL, halfW], [-halfL, -halfW]].forEach(function (o) {
     var post = new THREE.Mesh(postGeom, postMat);
-    post.position.set(o[0], 0, o[1]);
+    post.position.set(o[0], -totalH / 2 + legH / 2, o[1]);
     hitbox.add(post);
   });
 
   var offsets = computeLevelOffsets(levels.length, totalH);
   offsets.forEach(function (ly, i) {
-    var board = new THREE.Mesh(new THREE.BoxGeometry(l, 4, w), makeLabelMaterial("Shelf " + levels[i], "#d9c39a"));
+    var text = "Shelf " + levels[i];
+    var endMat = makeShelfFaceMaterial(text, w, SHELF_BOARD_T);
+    var sideMat = makeShelfFaceMaterial(text, l, SHELF_BOARD_T);
+    var topMat = makeShelfFaceMaterial(text, l, w);
+    // BoxGeometry face order: +x, -x, +y, -y, +z, -z
+    var board = new THREE.Mesh(new THREE.BoxGeometry(l, SHELF_BOARD_T, w), [endMat, endMat, topMat, boardMat, sideMat, sideMat]);
     board.position.set(0, ly, 0);
     hitbox.add(board);
   });
@@ -899,7 +938,9 @@ function removeFixture(index) {
    "Update Shelf" can adjust it; Start #/Levels stay display-only here --
    changing level count means removing and re-adding the unit. */
 function selectFixture(f) {
+  if (state.selected) selectPallet(null);
   state.selectedFixture = f;
+  updateSelectionUI();
   $("shelfStart").value = f.levels[0];
   $("shelfCount").value = f.levels.length;
   $("shelfStart").disabled = true;
@@ -911,6 +952,7 @@ function selectFixture(f) {
   $("shelfPosZ").value = round2(f.pos.z);
   $("shelfElevation").value = round2(f.pos.y - f.totalH / 2);
   $("btnUpdateShelf").style.display = "";
+  $("shelfSelRow").style.display = "";
   updateFixtureList();
 }
 
@@ -919,22 +961,16 @@ function deselectFixture() {
   $("shelfStart").disabled = false;
   $("shelfCount").disabled = false;
   $("btnUpdateShelf").style.display = "none";
+  $("shelfSelRow").style.display = "none";
+  updateSelectionUI();
   updateFixtureList();
 }
 
-function updateSelectedShelf() {
-  var f = state.selectedFixture;
+/* Rebuilds a unit's meshes at a new size/position (the hitbox and every post
+   and board are regenerated), clamps it inside the trailer, and re-snaps any
+   cargo assigned to its levels. Shared by Update Shelf and Rotate. */
+function rebuildFixture(f, l, w, totalH, newPos) {
   var t = currentTrailer();
-  if (!f || !t) { toast("Select a shelving unit first.", "err"); return; }
-
-  var l = num($("shelfL").value, f.l), w = num($("shelfW").value, f.w), totalH = num($("shelfH").value, f.totalH);
-  if (l <= 0 || w <= 0 || totalH <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
-
-  var elevation = num($("shelfElevation").value, f.pos.y - f.totalH / 2);
-  var x = num($("shelfPosX").value, f.pos.x);
-  var z = num($("shelfPosZ").value, f.pos.z);
-  var newPos = { x: x, y: elevation + totalH / 2, z: z };
-
   disposeMesh(f.hitbox);
   var hitbox = buildShelfUnit(f.levels, l, w, totalH, newPos);
   scene.add(hitbox);
@@ -955,7 +991,36 @@ function updateSelectedShelf() {
   updateFixtureList();
   updateManifest();
   selectFixture(f);
+}
+
+function updateSelectedShelf() {
+  var f = state.selectedFixture;
+  if (!f || !currentTrailer()) { toast("Select a shelving unit first.", "err"); return; }
+
+  var l = num($("shelfL").value, f.l), w = num($("shelfW").value, f.w), totalH = num($("shelfH").value, f.totalH);
+  if (l <= 0 || w <= 0 || totalH <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
+
+  var elevation = num($("shelfElevation").value, f.pos.y - f.totalH / 2);
+  var x = num($("shelfPosX").value, f.pos.x);
+  var z = num($("shelfPosZ").value, f.pos.z);
+  rebuildFixture(f, l, w, totalH, { x: x, y: elevation + totalH / 2, z: z });
   toast("Shelving unit updated.", "ok");
+}
+
+/* 90 degrees about the vertical axis, same as cargo: length and width swap,
+   keeping the unit's center where it was. */
+function rotateSelectedShelf() {
+  var f = state.selectedFixture;
+  if (!f || !currentTrailer()) { toast("Select a shelving unit first.", "err"); return; }
+  rebuildFixture(f, f.w, f.l, f.totalH, { x: f.pos.x, y: f.pos.y, z: f.pos.z });
+}
+
+function deleteSelectedShelf() {
+  var t = currentTrailer();
+  var f = state.selectedFixture;
+  if (!f || !t) { toast("Select a shelving unit first.", "err"); return; }
+  removeFixture(t.fixtures.indexOf(f));
+  toast("Shelving unit removed.", "ok");
 }
 
 function disposeFixtures(t) {
@@ -978,7 +1043,7 @@ function findShelf(t, shelfId) {
 function shelfRestPosition(match, itemH) {
   var f = match.fixture;
   var offsets = computeLevelOffsets(f.levels.length, f.totalH);
-  var boardTopY = f.pos.y + offsets[match.levelIndex] + 2;
+  var boardTopY = f.pos.y + offsets[match.levelIndex] + SHELF_BOARD_T / 2;
   return { x: f.pos.x, y: boardTopY + itemH / 2, z: f.pos.z };
 }
 
@@ -1603,10 +1668,23 @@ function disposeMaterial(mat) {
 }
 
 function selectPallet(mesh) {
+  if (mesh && state.selectedFixture) deselectFixture();
   state.selected = mesh || null;
   if (mesh) fillSidebarForm(mesh.userData);
   updateSelectionUI();
   updateManifest();
+}
+
+/* Rotate / Delete (buttons and the R / Delete keys) act on whichever is
+   currently selected: a cargo item or a shelving unit. */
+function rotateSelection() {
+  if (!state.selected && state.selectedFixture) rotateSelectedShelf();
+  else rotatePallet();
+}
+
+function deleteSelection() {
+  if (!state.selected && state.selectedFixture) deleteSelectedShelf();
+  else removePallet(state.selected);
 }
 
 function fillSidebarForm(d) {
@@ -1628,9 +1706,12 @@ function fillSidebarForm(d) {
 }
 
 function updateSelectionUI() {
+  var f = state.selectedFixture;
   $("selectionNotice").textContent = state.selected
     ? "Selected: " + state.selected.userData.label
-    : "No selection";
+    : f
+      ? "Selected: shelving unit (Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "") + ")"
+      : "No selection";
 }
 
 function toggleDelete() {
