@@ -2,6 +2,17 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.12.1] - 2026-09-25
+
+### Fixed
+
+- **A shelving unit could come apart while being dragged.** Dragging grabbed
+  whichever board or leg the cursor happened to be over and moved just that
+  piece away from the rest. Only the whole-unit box can be grabbed now, so
+  the unit always moves as one. The same fix applies to pallet decks, tote
+  rims, tapered shapes and loaded .glb models, which could be torn off their
+  cargo item the same way.
+
 ## [2.12.0] - 2026-09-25
 
 ### Added

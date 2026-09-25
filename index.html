@@ -315,7 +315,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.12.0";
+var APP_VERSION = "2.12.1";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -853,6 +853,7 @@ function buildShelfUnit(levels, l, w, totalH, pos) {
   [[halfL, halfW], [halfL, -halfW], [-halfL, halfW], [-halfL, -halfW]].forEach(function (o) {
     var post = new THREE.Mesh(postGeom, postMat);
     post.position.set(o[0], -totalH / 2 + legH / 2, o[1]);
+    makeNonPickable(post);
     hitbox.add(post);
   });
 
@@ -865,6 +866,7 @@ function buildShelfUnit(levels, l, w, totalH, pos) {
     // BoxGeometry face order: +x, -x, +y, -y, +z, -z
     var board = new THREE.Mesh(new THREE.BoxGeometry(l, SHELF_BOARD_T, w), [endMat, endMat, topMat, boardMat, sideMat, sideMat]);
     board.position.set(0, ly, 0);
+    makeNonPickable(board);
     hitbox.add(board);
   });
 
@@ -1164,6 +1166,18 @@ function dataUrlToArrayBuffer(dataUrl) {
   return bytes.buffer;
 }
 
+/* DragControls drags whichever *part* of an object the cursor ray hits, not
+   its parent. With the camera inside a shelving unit's invisible box (or
+   through any tie between flush faces) the ray hits a board or leg directly,
+   and that one piece gets dragged away from the rest. Every piece attached to
+   a hitbox (boards, legs, pallet deck, tote rim, taper shape, loaded model) is
+   made invisible to raycasting, so only the hitbox itself can ever be grabbed. */
+function noPick() {}
+function makeNonPickable(obj) {
+  if (obj.traverse) obj.traverse(function (n) { n.raycast = noPick; });
+  else obj.raycast = noPick;
+}
+
 function disposeObjectTree(obj) {
   obj.traverse(function (node) {
     if (node.geometry) node.geometry.dispose();
@@ -1230,6 +1244,7 @@ function attachModelToMesh(mesh, d) {
     clearCargoDecoration(mesh);
     applyModelHitboxMaterial(mesh);
     var root = fitModelToBox(gltf.scene, effectiveL(d), effectiveH(d), effectiveW(d));
+    makeNonPickable(root);
     mesh.add(root);
     d._modelRoot = root;
   }, function () {
@@ -1390,7 +1405,9 @@ function buildTaperedGeometry(d) {
 function addTaperVisual(mesh, d) {
   var g = buildTaperedGeometry(d);
   if (!g) return false;
-  mesh.add(new THREE.Mesh(g, makeLabelMaterial(d.label, d.color)));
+  var shape = new THREE.Mesh(g, makeLabelMaterial(d.label, d.color));
+  makeNonPickable(shape);
+  mesh.add(shape);
   applyModelHitboxMaterial(mesh);
   d._taperActive = true;
   return true;
@@ -1404,11 +1421,13 @@ function addCargoDecoration(mesh, d) {
     var deckH = Math.max(4, h * 0.08);
     var deck = new THREE.Mesh(new THREE.BoxGeometry(l, deckH, w), deckMat);
     deck.position.set(0, -h / 2 + deckH / 2, 0);
+    makeNonPickable(deck);
     mesh.add(deck);
   } else if (d.itemType === "tote") {
     var lipMat = new THREE.MeshPhongMaterial({ color: 0x2c3e50 });
     var lip = new THREE.Mesh(new THREE.BoxGeometry(l, Math.max(3, h * 0.08), w), lipMat);
     lip.position.set(0, h / 2, 0);
+    makeNonPickable(lip);
     mesh.add(lip);
   }
 }

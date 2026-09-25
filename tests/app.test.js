@@ -754,6 +754,31 @@ test("the top shelf is flush with the top of the unit, so legs never rise above 
   assert(legs.every((b) => b[1] < 72), "legs stop just inside the top board rather than poking past it");
 });
 
+test("only the whole-object hitbox can be grabbed -- boards, legs and decorations are invisible to picking", () => {
+  const win = boot();
+  const created = [];
+  const realMesh = win.THREE.Mesh;
+  win.THREE.Mesh = function (g, m) { const o = realMesh(g, m); created.push(o); return o; };
+
+  // A shelving unit: created[0] is the hitbox, everything after is a board or leg.
+  win.buildShelfUnit(["1", "2"], 36, 18, 72, { x: 0, y: 36, z: 0 });
+  const [hitbox, ...parts] = created.splice(0);
+  assert(parts.length >= 6, "4 legs + 2 boards were built");
+  eq(typeof hitbox.raycast, "undefined", "the hitbox keeps default raycasting, so it can still be grabbed");
+  assert(parts.every((p) => typeof p.raycast === "function" && p.raycast() === undefined),
+    "every leg and board has raycasting disabled, so a ray can never select (and tear off) one of them");
+
+  // A pallet's deck, and a tote's rim.
+  for (const type of ["pallet", "tote"]) {
+    win.document.getElementById("itemType").value = type;
+    win.addPalletFromForm();
+    const [main, ...deco] = created.splice(0);
+    eq(typeof main.raycast, "undefined", type + " hitbox stays grabbable");
+    assert(deco.length >= 1 && deco.every((p) => typeof p.raycast === "function"), type + " decoration is not pickable");
+  }
+  win.THREE.Mesh = realMesh;
+});
+
 test("a cargo item on a single-level shelf rests on the board at the top of the unit", () => {
   const win = boot();
   win.addShelvesFromForm();
