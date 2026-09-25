@@ -39,7 +39,11 @@
   button:hover { filter:brightness(1.08); }
   .util-btn { background:var(--blue); } .update-btn { background:var(--purple); }
   .save-btn { background:var(--slate); } .warn-btn { background:var(--red); }
-  .row { display:flex; gap:6px; } .row > div { flex:1 1 0; min-width:0; }
+  /* Cells are equal height; inputs sit at the bottom (so a wrapped label can't
+     misalign the boxes) and buttons stretch to match their neighbor. */
+  .row { display:flex; gap:6px; } .row > div { flex:1 1 0; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; }
+  .row > div > button { flex:1 1 auto; }
+  .sub { border-top:1px dashed #ccc; margin-top:4px; padding-top:8px; }
   .hint { font-size:10px; color:#777; margin:-4px 0 8px; line-height:1.35; }
   #delToggle.active { background:var(--red) !important; }
   .total-box { background:var(--green); color:#fff; padding:8px 10px; margin:0 0 6px; border-radius:4px; font-weight:bold; text-align:center; font-size:13px; }
@@ -169,9 +173,14 @@
       <option value="left">Left wall</option>
       <option value="right">Right wall</option>
     </select>
+    <label>Starting end</label>
+    <select id="shelfEnd">
+      <option value="nose">Front (nose)</option>
+      <option value="rear">Back (rear doors)</option>
+    </select>
     <div class="row">
-      <div><label>Pos from nose (in)</label><input type="number" id="shelfPosX" step="1" placeholder="auto"></div>
-      <div><label>Pos from left wall (in)</label><input type="number" id="shelfPosZ" step="1" placeholder="auto"></div>
+      <div><label>From nose (in)</label><input type="number" id="shelfPosX" step="1" placeholder="auto"></div>
+      <div><label>From left wall (in)</label><input type="number" id="shelfPosZ" step="1" placeholder="auto"></div>
     </div>
     <label>Height off floor (in)</label>
     <input type="number" id="shelfElevation" value="0" min="0" step="1">
@@ -207,13 +216,15 @@
       <div><label>Wid in</label><input type="number" id="W" value="40" min="1" step="1"></div>
       <div><label>Hgt in</label><input type="number" id="H" value="48" min="1" step="1"></div>
     </div>
-    <label>Other end (optional, if tapered) -- leave blank to keep a uniform box</label>
-    <div class="row">
-      <div><label>Len in</label><input type="number" id="L2" min="0" step="1" placeholder="Same as Len in"></div>
-      <div><label>Wid in</label><input type="number" id="W2" min="0" step="1" placeholder="Same as Wid in"></div>
-      <div><label>Hgt in</label><input type="number" id="H2" min="0" step="1" placeholder="Same as Hgt in"></div>
+    <div class="sub">
+      <label>Other end (optional, tapered)</label>
+      <div class="row">
+        <div><label>Len in</label><input type="number" id="L2" min="0" step="1" placeholder="same"></div>
+        <div><label>Wid in</label><input type="number" id="W2" min="0" step="1" placeholder="same"></div>
+        <div><label>Hgt in</label><input type="number" id="H2" min="0" step="1" placeholder="same"></div>
+      </div>
+      <p class="hint">For a part that changes size from one end to the other. Wid and Hgt shrink or grow from the nose end to the tail end; Len differs between the left-wall side and the right-wall side. Leave a box blank to keep that dimension uniform. Collision and floor space use the larger end (floor % uses the average); the manifest and PDF show both sizes.</p>
     </div>
-    <p class="hint">For a part that's a different size on one end than the other (e.g. 40 in wide on one end, 30 in on the other). Leave any of these blank to keep that dimension uniform. The 3D shape is sized to the larger end on each axis so it never clips the trailer; floor-space % uses the true average footprint; the manifest and PDF show both sizes.</p>
     <div class="row">
       <div><label>Weight lb</label><input type="number" id="Weight" value="1500" min="0" step="1"></div>
       <div><label>Value $</label><input type="number" id="Value" value="5000" min="0" step="1"></div>
@@ -300,7 +311,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.10.1";
+var APP_VERSION = "2.11.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -500,6 +511,7 @@ function wireUI() {
   $("btnAddShelves").onclick = addShelvesFromForm;
   $("btnUpdateShelf").onclick = updateSelectedShelf;
   $("shelfSide").onchange = onShelfSideChange;
+  $("shelfEnd").onchange = onShelfEndChange;
 
   $("itemType").onchange = onItemTypeChange;
 
@@ -827,6 +839,13 @@ function onShelfSideChange() {
   $("shelfPosZ").value = $("shelfSide").value === "right" ? round2(t.dims.w - w / 2) : round2(w / 2);
 }
 
+function onShelfEndChange() {
+  var t = currentTrailer();
+  if (!t) return;
+  var l = num($("shelfL").value, 36);
+  $("shelfPosX").value = $("shelfEnd").value === "rear" ? round2(t.dims.l - l / 2) : round2(l / 2);
+}
+
 function addShelvesFromForm() {
   var t = currentTrailer();
   if (!t) return;
@@ -838,7 +857,8 @@ function addShelvesFromForm() {
   var side = $("shelfSide").value === "right" ? "right" : "left";
   var elevation = num($("shelfElevation").value, 0);
   var defaultZ = side === "left" ? (w / 2) : (t.dims.w - w / 2);
-  var x = $("shelfPosX").value !== "" ? num($("shelfPosX").value, l / 2) : l / 2;
+  var defaultX = $("shelfEnd").value === "rear" ? (t.dims.l - l / 2) : l / 2;
+  var x = $("shelfPosX").value !== "" ? num($("shelfPosX").value, defaultX) : defaultX;
   var z = $("shelfPosZ").value !== "" ? num($("shelfPosZ").value, defaultZ) : defaultZ;
   var pos = { x: x, y: elevation + totalH / 2, z: z };
 
@@ -1274,7 +1294,45 @@ function itemTypeLabel(d) {
    Every decoration is sized to sit flush inside the parent's exact l x w
    footprint (never larger) so nothing can poke through a trailer wall or
    another pallet when the parent box itself is correctly clamped/resolved. */
+/* A tapered item's visible shape is a box whose 8 corners are pulled to the
+   two end sizes: Wid/Hgt go from the value at the nose end (sx = -1) to the
+   "other end" value at the tail end (sx = +1); Len goes from the left-wall
+   side to the right-wall side. The bottom stays flat. Every corner lies
+   inside the plain hitbox box (sized to the larger end on each axis), so
+   drag/clamp/collision are untouched and the shape can't clip a wall. */
+function buildTaperedGeometry(d) {
+  var g = new THREE.BoxGeometry(1, 1, 1);
+  var pos = g.attributes && g.attributes.position;
+  if (!pos) return null;
+  var hm = effectiveH(d);
+  for (var i = 0; i < pos.count; i++) {
+    var sx = pos.getX(i) < 0 ? -1 : 1;
+    var sy = pos.getY(i) < 0 ? -1 : 1;
+    var sz = pos.getZ(i) < 0 ? -1 : 1;
+    var halfL = (sz < 0 ? d.l : d.l2) / 2;
+    var halfW = (sx < 0 ? d.w : d.w2) / 2;
+    var endH = sx < 0 ? d.h : d.h2;
+    pos.setXYZ(i, sx * halfL, sy < 0 ? -hm / 2 : -hm / 2 + endH, sz * halfW);
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
+  return g;
+}
+
+/* Swaps the plain box for the tapered shape: the hitbox goes (nearly)
+   invisible and the labeled tapered mesh is attached as its child. Returns
+   false if the geometry can't be built, leaving the normal box in place. */
+function addTaperVisual(mesh, d) {
+  var g = buildTaperedGeometry(d);
+  if (!g) return false;
+  mesh.add(new THREE.Mesh(g, makeLabelMaterial(d.label, d.color)));
+  applyModelHitboxMaterial(mesh);
+  d._taperActive = true;
+  return true;
+}
+
 function addCargoDecoration(mesh, d) {
+  if (isTapered(d) && addTaperVisual(mesh, d)) return;
   var l = effectiveL(d), h = effectiveH(d), w = effectiveW(d);
   if (d.itemType === "pallet") {
     var deckMat = new THREE.MeshPhongMaterial({ color: 0xa9773f });
@@ -1296,6 +1354,12 @@ function clearCargoDecoration(mesh) {
     if (c.geometry) c.geometry.dispose();
     disposeMaterial(c.material);
   });
+  var d = mesh.userData;
+  if (d && d._taperActive) {
+    d._taperActive = false;
+    disposeMaterial(mesh.material);
+    mesh.material = makeLabelMaterial(d.label, d.color);
+  }
 }
 
 function refreshCargoDecoration(mesh) {
@@ -1435,11 +1499,13 @@ function updatePallet() {
     p.geometry.dispose();
     p.geometry = new THREE.BoxGeometry(effectiveL(d), effectiveH(d), effectiveW(d));
   }
-  if (labelChanged && !d.model) {
-    disposeMaterial(p.material);
-    p.material = makeLabelMaterial(d.label, d.color);
+  if (!d.model) {
+    if (labelChanged && !d._taperActive) {
+      disposeMaterial(p.material);
+      p.material = makeLabelMaterial(d.label, d.color);
+    }
+    if (sizeChanged || typeChanged || (labelChanged && d._taperActive)) refreshCargoDecoration(p);
   }
-  if ((sizeChanged || typeChanged) && !d.model) refreshCargoDecoration(p);
 
   var file = pickedPhotoFile();
   if (file) {

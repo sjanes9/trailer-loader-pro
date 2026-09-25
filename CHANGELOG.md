@@ -2,6 +2,31 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.11.0] - 2026-09-25
+
+### Added
+
+- **Shelves can start at the back of the trailer.** New "Starting end"
+  choice (Front / Back) next to "Starting mount side"; Back places the unit
+  flush against the rear doors. "From nose" / "From left wall" still let you
+  type an exact position.
+
+### Fixed
+
+- **A tapered part didn't look tapered.** Entering an "other end" size only
+  changed the numbers -- the 3D object stayed a full box. The visible shape
+  now really tapers: Wid and Hgt go from the nose end to the tail end (the
+  bottom stays flat), and Len differs between the left-wall and right-wall
+  sides. The invisible collision box is still sized to the larger end on each
+  axis, so drag, clamping and floor math are unchanged and the shape can't
+  clip a wall. Pallet deck / tote rim decoration is skipped on tapered parts.
+- **Cramped form layout.** The "Other end" section had a two-line label
+  jammed against its column headings and placeholders cut off to "Same a...".
+  It now has a divider, a one-line label and short "same" placeholders. Side-
+  by-side fields and buttons are equal-height cells, so a label that wraps
+  (e.g. "From left wall (in)") no longer pushes its input out of line with its
+  neighbor.
+
 ## [2.10.1] - 2026-09-14
 
 ### Changed

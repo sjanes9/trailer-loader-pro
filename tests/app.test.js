@@ -327,6 +327,84 @@ test("tapering can apply to length and height too, each independently, matching 
   eq(p.userData.w2, 50, "the taper pairing (l2/w2) swaps along with l/w");
 });
 
+/* The headless THREE stub's BoxGeometry has no vertex data, so give it the
+   8 corners (+/-0.5) that the real BoxGeometry(1,1,1) exposes. */
+function withVertexBoxGeometry(win, fn) {
+  const realBox = win.THREE.BoxGeometry;
+  win.THREE.BoxGeometry = function (w, h, dd) {
+    const v = [];
+    for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) v.push([sx, sy, sz]);
+    const position = {
+      count: v.length, needsUpdate: false,
+      getX: (i) => v[i][0], getY: (i) => v[i][1], getZ: (i) => v[i][2],
+      setXYZ: (i, x, y, z) => { v[i] = [x, y, z]; },
+    };
+    return { parameters: { width: w, height: h, depth: dd }, attributes: { position },
+             computeVertexNormals() {}, dispose() {}, _v: v };
+  };
+  try { return fn(); } finally { win.THREE.BoxGeometry = realBox; }
+}
+
+test("a tapered item's visible shape really narrows: width shrinks from the nose end to the tail end", () => {
+  const win = boot();
+  const d = win.normalizePallet({ l: 60, w: 40, h: 48, w2: 10 });
+  const g = withVertexBoxGeometry(win, () => win.buildTaperedGeometry(d));
+  const nose = g._v.filter((p) => p[0] < 0), tail = g._v.filter((p) => p[0] > 0);
+  assert(nose.every((p) => Math.abs(Math.abs(p[2]) - 20) < 1e-9), "nose-end corners sit at +/-20 (40 wide)");
+  assert(tail.every((p) => Math.abs(Math.abs(p[2]) - 5) < 1e-9), "tail-end corners sit at +/-5 (10 wide)");
+  assert(g._v.every((p) => Math.abs(p[0]) <= 30 + 1e-9), "length never exceeds the hitbox half-length");
+});
+
+test("height taper keeps the bottom flat while the top slopes; the shape stays inside its hitbox", () => {
+  const win = boot();
+  const d = win.normalizePallet({ l: 60, w: 40, h: 48, h2: 12 });
+  const g = withVertexBoxGeometry(win, () => win.buildTaperedGeometry(d));
+  assert(g._v.every((p) => p[1] >= -24 - 1e-9 && p[1] <= 24 + 1e-9), "all corners inside the 48-high hitbox");
+  eq(g._v.filter((p) => Math.abs(p[1] + 24) < 1e-9).length, 4, "the four bottom corners all sit on the floor plane");
+  const topNose = g._v.filter((p) => p[0] < 0 && Math.abs(p[1] + 24) > 1e-9).map((p) => p[1]);
+  const topTail = g._v.filter((p) => p[0] > 0 && Math.abs(p[1] + 24) > 1e-9).map((p) => p[1]);
+  eq(topNose.length + topTail.length, 4, "the four top corners are the rest");
+  assert(topNose.every((y) => Math.abs(y - 24) < 1e-9), "nose end is the full 48 high");
+  assert(topTail.every((y) => Math.abs(y - (-24 + 12)) < 1e-9), "tail end is only 12 high");
+});
+
+test("a tapered item swaps to the tapered visual, and going back to uniform restores the plain box", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("W").value = "40";
+  d.getElementById("W2").value = "10";
+  withVertexBoxGeometry(win, () => win.addPalletFromForm());
+  const p = win.state.trailers[0].pallets[0];
+  eq(p.userData._taperActive, true, "tapered visual is active");
+  assert(p.material.opts.opacity < 0.1, "plain box is hidden so only the tapered shape shows");
+  eq(p.geometry.parameters.depth, 40, "hitbox still sized to the larger end for clamp/collision");
+
+  win.selectPallet(p);
+  d.getElementById("W2").value = "";
+  withVertexBoxGeometry(win, () => win.updatePallet());
+  eq(!!p.userData._taperActive, false, "taper visual removed");
+  assert(p.material.opts.opacity === undefined, "normal opaque labeled material restored");
+});
+
+test("a shelf can start at the back (rear doors) of the trailer instead of the nose", () => {
+  const win = boot();
+  const d = win.document;
+  const t = win.state.trailers[0];
+
+  d.getElementById("shelfEnd").value = "rear";
+  win.addShelvesFromForm();
+  const rear = t.fixtures[0];
+  eq(rear.pos.x, t.dims.l - rear.l / 2, "rear shelf sits flush against the back wall");
+
+  d.getElementById("shelfEnd").value = "nose";
+  win.addShelvesFromForm();
+  eq(t.fixtures[1].pos.x, t.fixtures[1].l / 2, "nose shelf still sits flush against the front wall");
+
+  d.getElementById("shelfEnd").value = "rear";
+  win.onShelfEndChange();
+  eq(Number(d.getElementById("shelfPosX").value), win.round2(t.dims.l - 36 / 2), "choosing Back prefills the position field");
+});
+
 test("changing trailer dimensions (entered in feet) rebuilds the frame and re-clamps cargo", () => {
   const win = boot();
   win.addPalletFromForm();
