@@ -329,24 +329,29 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.14.0";
+var APP_VERSION = "2.15.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
 var UPDATE_CHECK_MS = 5 * 60 * 1000;
 
 /* Nominal interior dimensions in inches. Starting points, not spec values. */
-/* Box truck interior dims and payload are sourced from Penske's and
-   U-Haul's own published specs (pensketruckrental.com and uhaul.com,
-   re-checked 2026-09-28 against every size listed there -- all match
-   exactly). The semi-trailer/container/flatbed group isn't one carrier's
-   spec sheet, so it's cross-checked against several trailer-manufacturer
-   and container references instead (also 2026-09-28); a 53 ft trailer's
-   *interior* length is reported anywhere from about 630 to 636 in
-   depending on make, so that group uses 630 in (52'6"), nearer the middle
-   of that range, rather than the full nominal 53 ft. Like every preset
-   here, they're nominal starting points -- the app's existing hint already
-   says to confirm against the actual vehicle. */
+/* Box truck interior dims, "Mom's Attic" cab-over cubbie dims and payload
+   are taken from a length/width/height/payload/cab-over comparison table
+   for U-Haul and Penske trucks (2026-09-28) -- U-Haul lists a 17 ft size
+   not currently offered on uhaul.com's own truck-rental page, kept here
+   since the table gives it full dimensions and it's a real, just less
+   common, size; its payload (not in that table) is from a separate
+   interior-dimensions/payload comparison table (also 2026-09-28). Per that
+   first table, none of the Penske sizes have a cab-over cubbie ("None" in
+   every row) -- only U-Haul's do. The semi-trailer/container/flatbed group
+   isn't one carrier's spec sheet, so it's cross-checked against several
+   trailer-manufacturer and container references instead (also 2026-09-28);
+   a 53 ft trailer's *interior* length is reported anywhere from about 630
+   to 636 in depending on make, so that group uses 630 in (52'6"), nearer
+   the middle of that range, rather than the full nominal 53 ft. Like every
+   preset here, they're nominal starting points -- the app's existing hint
+   already says to confirm against the actual vehicle. */
 var PRESETS = [
   { id: "van53",  name: "53 ft dry van",   l: 630, w: 102, h: 110, group: "Semi trailers & containers" },
   { id: "van48",  name: "48 ft dry van",   l: 570, w: 102, h: 110, group: "Semi trailers & containers" },
@@ -354,14 +359,15 @@ var PRESETS = [
   { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94,  group: "Semi trailers & containers" },
   { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102, group: "Semi trailers & containers" },
   { id: "uhaul10", name: "U-Haul 10 ft truck", l: 119, w: 75, h: 73,  maxWeight: 2850,  group: "U-Haul box trucks" },
-  { id: "uhaul15", name: "U-Haul 15 ft truck", l: 180, w: 92, h: 86,  maxWeight: 6385,  group: "U-Haul box trucks", cabOver: true },
-  { id: "uhaul20", name: "U-Haul 20 ft truck", l: 234, w: 92, h: 86,  maxWeight: 5700,  group: "U-Haul box trucks", cabOver: true },
-  { id: "uhaul26", name: "U-Haul 26 ft truck", l: 314, w: 98, h: 99,  maxWeight: 12859, group: "U-Haul box trucks", cabOver: true },
-  { id: "uhaul29", name: "U-Haul 29 ft truck", l: 350, w: 97, h: 105, maxWeight: 11939, group: "U-Haul box trucks", cabOver: true },
-  { id: "penske12", name: "Penske 12 ft truck", l: 144, w: 78, h: 73, maxWeight: 3100,  group: "Penske box trucks" },
-  { id: "penske16", name: "Penske 16 ft truck", l: 192, w: 91, h: 78, maxWeight: 4300,  group: "Penske box trucks", cabOver: true },
-  { id: "penske22", name: "Penske 22 ft truck", l: 263, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks", cabOver: true },
-  { id: "penske26", name: "Penske 26 ft truck", l: 311, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks", cabOver: true },
+  { id: "uhaul15", name: "U-Haul 15 ft truck", l: 180, w: 92, h: 86,  maxWeight: 6385,  group: "U-Haul box trucks", cabOver: { depth: 30, height: 31 } },
+  { id: "uhaul17", name: "U-Haul 17 ft truck", l: 201, w: 92, h: 86,  maxWeight: 6160,  group: "U-Haul box trucks", cabOver: { depth: 30, height: 31 } },
+  { id: "uhaul20", name: "U-Haul 20 ft truck", l: 233, w: 92, h: 85,  maxWeight: 5700,  group: "U-Haul box trucks", cabOver: { depth: 30, height: 31 } },
+  { id: "uhaul26", name: "U-Haul 26 ft truck", l: 314, w: 98, h: 99,  maxWeight: 12859, group: "U-Haul box trucks", cabOver: { depth: 32, height: 39 } },
+  { id: "uhaul29", name: "U-Haul 29 ft truck", l: 350, w: 97, h: 105, maxWeight: 11939, group: "U-Haul box trucks", cabOver: { depth: 31, height: 38 } },
+  { id: "penske12", name: "Penske 12 ft truck", l: 144, w: 78, h: 73,  maxWeight: 3100,  group: "Penske box trucks" },
+  { id: "penske16", name: "Penske 16 ft truck", l: 192, w: 91, h: 78,  maxWeight: 4300,  group: "Penske box trucks" },
+  { id: "penske22", name: "Penske 22 ft truck", l: 263, w: 97, h: 97,  maxWeight: 10000, group: "Penske box trucks" },
+  { id: "penske26", name: "Penske 26 ft truck", l: 312, w: 102, h: 99, maxWeight: 10000, group: "Penske box trucks" },
   { id: "custom", name: "Custom",          l: 0,   w: 0,   h: 0   }
 ];
 
@@ -614,15 +620,23 @@ function buildTrailerMeshes(t) {
   t.floor = floor; t.frame = frame;
   [floor, frame].forEach(function (m) { m.visible = false; scene.add(m); });
 
-  t.truck = buildTruckMeshes(t.dims.w / 2);
+  var preset = matchingPreset(t.dims);
+  var cabOverSpec = preset && preset.cabOver;
+  // The generic cab is a fixed 78 in tall (see buildTruckMeshes) regardless
+  // of trailer size, but a real Mom's Attic cubbie's floor can sit well
+  // below that on a shorter box truck. Rather than let the cab poke up
+  // through the cubbie floor, the whole cab/hood/bumper/wheels group scales
+  // down (proportionally, about the nose/ground point) to exactly clear it;
+  // trailers with no cubbie keep the cab at full size.
+  var cabScale = cabOverSpec ? Math.max(0.35, Math.min(1, (t.dims.h - cabOverSpec.height) / 78)) : 1;
+  t.truck = buildTruckMeshes(t.dims.w / 2, cabScale);
   t.truck.forEach(function (m) { m.visible = false; scene.add(m); });
 
-  // truck[0] is the cab (see buildTruckMeshes) -- reading its actual top
-  // back out keeps the cubbie sitting flush on the cab roof with no gap or
+  // truck[0] is the (possibly scaled) cab -- reading its actual top back
+  // out keeps the cubbie sitting flush on the cab roof with no gap or
   // overlap, without duplicating the cab's own numbers here.
   var cabTop = t.truck[0].position.y + t.truck[0].geometry.parameters.height / 2;
-  var preset = matchingPreset(t.dims);
-  t.cabOver = (preset && preset.cabOver) ? cabOverDims(t.dims, cabTop) : null;
+  t.cabOver = cabOverSpec ? { depth: cabOverSpec.depth, height: cabOverSpec.height, bottom: cabTop } : null;
   // Kept separate from t.truck: the cubbie is part of the box's own storage
   // space, not the cab, so it stays usable even with "Show truck cab" off.
   t.cabOverMeshes = t.cabOver ? buildCabOverMesh(t.cabOver, t.dims.w) : [];
@@ -649,8 +663,13 @@ function matchingPreset(dims) {
 
 /* Tractor unit coupled to the trailer nose (x=0), built entirely from boxes
    and a canvas-drawn face texture -- no external model or image file, so the
-   single-file/no-build-step/no-new-dependency constraints still hold. */
-function buildTruckMeshes(centerZ) {
+   single-file/no-build-step/no-new-dependency constraints still hold.
+   `scale` (default 1) shrinks the whole assembly proportionally about the
+   nose/ground point (x=0, y=0) -- used to keep the cab clear of a Mom's
+   Attic cubbie that sits lower than the cab's normal 78 in roof height;
+   see buildTrailerMeshes()'s cabScale. */
+function buildTruckMeshes(centerZ, scale) {
+  var s = scale || 1;
   var red = new THREE.MeshPhongMaterial({ color: 0xb0342a });
   var darkRed = new THREE.MeshPhongMaterial({ color: 0x7a2118 });
   var dark = new THREE.MeshPhongMaterial({ color: 0x1c1c1c });
@@ -660,51 +679,44 @@ function buildTruckMeshes(centerZ) {
   // Box face material order is [+x, -x, +y, -y, +z, -z]. The tractor points
   // toward -x (away from the trailer), so the truck-face texture goes on -x.
   var cab = new THREE.Mesh(
-    new THREE.BoxGeometry(56, 74, 78),
+    new THREE.BoxGeometry(56 * s, 74 * s, 78 * s),
     [red, face, darkRed, dark, red, red]
   );
-  cab.position.set(-38, 41, centerZ);
+  cab.position.set(-38 * s, 41 * s, centerZ);
 
   var hood = new THREE.Mesh(
-    new THREE.BoxGeometry(42, 36, 70),
+    new THREE.BoxGeometry(42 * s, 36 * s, 70 * s),
     [red, chrome, red, dark, red, red]
   );
-  hood.position.set(-89, 22, centerZ);
+  hood.position.set(-89 * s, 22 * s, centerZ);
 
-  var bumper = new THREE.Mesh(new THREE.BoxGeometry(6, 12, 76), dark);
-  bumper.position.set(-111, 9, centerZ);
+  var bumper = new THREE.Mesh(new THREE.BoxGeometry(6 * s, 12 * s, 76 * s), dark);
+  bumper.position.set(-111 * s, 9 * s, centerZ);
 
-  var wheelGeom = new THREE.BoxGeometry(14, 26, 14);
+  var wheelGeom = new THREE.BoxGeometry(14 * s, 26 * s, 14 * s);
   var wheels = [
-    { x: -38, z: centerZ - 36 }, { x: -38, z: centerZ + 36 },
-    { x: -89, z: centerZ - 36 }, { x: -89, z: centerZ + 36 }
+    { x: -38 * s, z: centerZ - 36 * s }, { x: -38 * s, z: centerZ + 36 * s },
+    { x: -89 * s, z: centerZ - 36 * s }, { x: -89 * s, z: centerZ + 36 * s }
   ].map(function (o) {
     var w = new THREE.Mesh(wheelGeom, dark);
-    w.position.set(o.x, 13, o.z);
+    w.position.set(o.x, 13 * s, o.z);
     return w;
   });
 
   return [cab, hood, bumper].concat(wheels);
 }
 
-/* U-Haul's and Penske's larger box trucks (see the `cabOver` presets above)
-   extend the box forward over the cab roof as a walk-through storage
-   cubbie; their smallest (cutaway) trucks don't have one. It's usable
-   storage space that belongs to the box, not the cab -- kept in its own
-   t.cabOverMeshes group so it stays visible even with "Show truck cab" off. */
-/* Size and floor height of the cubbie, shared by its mesh and by
-   clampToTrailer()'s "can cargo go up there" check. It's a small
-   nose-forward volume from x=-depth to x=0, spanning the full trailer
-   width, sitting directly on the cab roof (cabTop) so it can never overlap
-   the cab below it -- capped at the box's own roofline dims.h except for a
-   forced 8 in minimum on the rare preset where the cab roof is at (or
-   above) the interior height (e.g. Penske 16 ft: confirm against the actual
-   vehicle, as the app's own hint already says for every preset). */
-function cabOverDims(dims, cabTop) {
-  return { depth: 30, height: Math.max(Math.min(30, dims.h - cabTop), 8), bottom: cabTop };
-}
+/* U-Haul's box trucks with a "Mom's Attic" (see the `cabOver` presets
+   above -- Penske's don't have one) extend the box forward over the cab
+   roof as a small walk-through storage cubbie. It's usable storage space
+   that belongs to the box, not the cab -- kept in its own t.cabOverMeshes
+   group so it stays visible even with "Show truck cab" off. Its depth and
+   height come straight from the preset's own Mom's Attic spec; its floor
+   height (t.cabOver.bottom, set in buildTrailerMeshes) is read back from
+   the actual (possibly scaled-down) cab mesh so it always sits flush on
+   the cab roof, never overlapping it.
 
-/* A solid box here would hide any cargo placed inside it (see
+   A solid box here would hide any cargo placed inside it (see
    clampToTrailer()'s cab-over handling), so this is drawn the same way as
    the main trailer body: a solid floor to rest cargo on, plus a wireframe
    outline for the shape -- nothing that blocks the view into it. */

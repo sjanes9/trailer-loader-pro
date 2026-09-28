@@ -2,6 +2,30 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.15.0] - 2026-09-28
+
+### Fixed
+
+- **"Mom's Attic" (the U-Haul cab-over cubbie) was too shallow to hold
+  anything.** Its height was a rough guess (a fraction of the box's own
+  height); real measurements show it's a fixed size per truck (2'6"-2'8"
+  deep, 2'7"-3'3" tall) that doesn't scale with the box, and on a shorter
+  truck it sits well below the generic cab's fixed roof height. The cubbie
+  now uses each preset's real depth/height, and the cab scales itself down
+  (proportionally, never up) to clear the cubbie's floor instead of poking
+  up into it.
+- **Penske trucks don't have a Mom's Attic at all** -- only U-Haul's do.
+  Removed it from the Penske 16/22/26 ft presets.
+
+### Changed
+
+- **Updated every U-Haul and Penske box truck preset** against a detailed
+  size/payload/cab-over comparison table (2026-09-28): added the U-Haul
+  17 ft truck (not currently on uhaul.com's own page, but a real size with
+  full dimensions in that table); corrected the U-Haul 20 ft truck's length
+  and height by 1 in each; corrected the Penske 26 ft truck's width and
+  height (was identical to the 22 ft truck, which looked like a data error).
+
 ## [2.14.0] - 2026-09-28
 
 ### Added

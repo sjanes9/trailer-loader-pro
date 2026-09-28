@@ -535,28 +535,55 @@ test("U-Haul/Penske presets with a cab-over cubbie get cab-over meshes kept sepa
   d.getElementById("tH").value = String(73 / 12);
   win.applyTrailerSettings();
   eq(win.state.trailers[0].cabOverMeshes.length, 0, "the small cutaway truck has no cab-over cubbie");
+
+  d.getElementById("tL").value = String(192 / 12); // Penske 16 ft truck: Penske has no Mom's Attic on any size
+  d.getElementById("tW").value = String(91 / 12);
+  d.getElementById("tH").value = String(78 / 12);
+  win.applyTrailerSettings();
+  eq(win.state.trailers[0].cabOver, null, "Penske trucks have no cab-over cubbie");
+  eq(win.state.trailers[0].cabOverMeshes.length, 0, "so no cab-over meshes either");
+});
+
+test("a 10x10x10 box actually fits in a U-Haul 20 ft truck's Mom's Attic (regression: the cubbie used to be only ~8 in tall there)", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("trailerPreset").value = "uhaul20";
+  win.onPresetChange();
+  win.applyTrailerSettings();
+  const t = win.state.trailers[0];
+  eq(t.cabOver.height, 31, "U-Haul 20 ft's real Mom's Attic height");
+  assert(t.cabOver.height >= 10, "a 10 in tall box has room to fit");
+
+  d.getElementById("L").value = "10"; d.getElementById("W").value = "10"; d.getElementById("H").value = "10";
+  win.addPalletFromForm();
+  const p = t.pallets[0];
+  p.position.set(2, 20, t.dims.w / 2);
+  win.clampToTrailer(p);
+  assert(p.position.x < 0, "the box clamps into the cubbie");
+  eq(p.position.y, t.cabOver.bottom + 5, "and sits flush on the cubbie floor, well clear of its 31 in ceiling");
 });
 
 test("the cab-over cubbie sits on the cab roof and never overlaps the cab below it", () => {
   const win = boot();
   const d = win.document;
-  d.getElementById("tL").value = String(263 / 12); // Penske 22 ft truck: has a cab-over cubbie
-  d.getElementById("tW").value = String(97 / 12);
-  d.getElementById("tH").value = String(97 / 12);
+  d.getElementById("tL").value = String(314 / 12); // U-Haul 26 ft truck: has a Mom's Attic cab-over cubbie
+  d.getElementById("tW").value = String(98 / 12);
+  d.getElementById("tH").value = String(99 / 12);
   win.applyTrailerSettings();
   const t = win.state.trailers[0];
   const cab = t.truck[0]; // buildTruckMeshes() returns [cab, hood, bumper, ...wheels]
   const cabTop = cab.position.y + cab.geometry.parameters.height / 2;
   eq(t.cabOver.bottom, cabTop, "the cubbie's floor sits exactly on the cab's roof, no gap or overlap");
+  assert(cab.geometry.parameters.height < 74, "the cab scaled down to clear the cubbie floor (74 in is its unscaled height)");
   assert(t.cabOver.bottom + t.cabOver.height <= t.dims.h + 1e-6, "the cubbie doesn't poke out above the box roofline");
 });
 
 test("small cargo dragged past the front wall on a cab-over trailer clamps into the cubbie instead of the main box", () => {
   const win = boot();
   const d = win.document;
-  d.getElementById("tL").value = String(263 / 12); // Penske 22 ft truck: real headroom above the cab
-  d.getElementById("tW").value = String(97 / 12);
-  d.getElementById("tH").value = String(97 / 12);
+  d.getElementById("tL").value = String(314 / 12); // U-Haul 26 ft truck: real headroom above the cab
+  d.getElementById("tW").value = String(98 / 12);
+  d.getElementById("tH").value = String(99 / 12);
   win.applyTrailerSettings();
   const t = win.state.trailers[0];
   assert(t.cabOver, "this trailer has a cab-over cubbie");
