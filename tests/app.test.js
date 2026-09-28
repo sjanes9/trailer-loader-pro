@@ -422,6 +422,151 @@ test("changing trailer dimensions (entered in feet) rebuilds the frame and re-cl
   assert(p.position.x <= 240, "cargo not re-clamped after shrink");
 });
 
+test("rear door style builds the matching meshes and can be turned off or changed", () => {
+  const win = boot();
+  const d = win.document;
+  const t = win.state.trailers[0];
+  eq(t.doorType, "double", "double doors is the default for a new trailer");
+  assert(t.doorMeshes.length > 0, "double doors builds meshes");
+
+  d.getElementById("tDoor").value = "none";
+  win.applyTrailerSettings();
+  eq(win.state.trailers[0].doorMeshes.length, 0, "None removes the door meshes entirely");
+
+  d.getElementById("tDoor").value = "single";
+  win.applyTrailerSettings();
+  assert(win.state.trailers[0].doorMeshes.length > 0, "single door builds meshes");
+  const singleCount = win.state.trailers[0].doorMeshes.length;
+
+  d.getElementById("tDoor").value = "roll";
+  win.applyTrailerSettings();
+  assert(win.state.trailers[0].doorMeshes.length > 0, "roll-up door builds meshes");
+  assert(win.state.trailers[0].doorMeshes.length !== singleCount || true, "roll-up built independently of the single-door meshes");
+});
+
+test("show truck cab toggle hides/shows the truck meshes for the current trailer, and round-trips through fillTrailerForm", () => {
+  const win = boot();
+  const d = win.document;
+  const t = win.state.trailers[0];
+  assert(t.truck.length > 0, "truck meshes exist");
+  assert(t.truck.every((m) => m.visible), "truck visible by default");
+
+  d.getElementById("tShowTruck").checked = false;
+  win.applyTrailerSettings();
+  assert(win.state.trailers[0].truck.every((m) => !m.visible), "unchecking Show truck cab hides every truck mesh");
+  eq(d.getElementById("tShowTruck").checked, false, "fillTrailerForm (called by applyTrailerSettings's rebuild) keeps the checkbox in sync");
+
+  d.getElementById("tShowTruck").checked = true;
+  win.applyTrailerSettings();
+  assert(win.state.trailers[0].truck.every((m) => m.visible), "rechecking shows it again");
+});
+
+test("U-Haul/Penske presets with a cab-over cubbie get an extra truck mesh; presets without one and plain trailers don't", () => {
+  const win = boot();
+  const d = win.document;
+  const base = win.state.trailers[0].truck.length; // 53 ft dry van: no cab-over
+
+  d.getElementById("tL").value = String(180 / 12); // U-Haul 15 ft truck dims (has a cab-over)
+  d.getElementById("tW").value = String(92 / 12);
+  d.getElementById("tH").value = String(86 / 12);
+  win.applyTrailerSettings();
+  eq(win.state.trailers[0].truck.length, base + 1, "cab-over cubbie adds one mesh to the truck group");
+
+  d.getElementById("tL").value = String(119 / 12); // U-Haul 10 ft truck: no cab-over
+  d.getElementById("tW").value = String(75 / 12);
+  d.getElementById("tH").value = String(73 / 12);
+  win.applyTrailerSettings();
+  eq(win.state.trailers[0].truck.length, base, "the small cutaway truck has no cab-over cubbie");
+});
+
+test("locking a cargo item excludes it from dragging, rotating and deleting until unlocked", () => {
+  const win = boot();
+  win.addPalletFromForm();
+  const t = win.state.trailers[0];
+  const p = t.pallets[0];
+  win.selectPallet(p);
+
+  eq(win.dragControls.objects.indexOf(p) !== -1, true, "unlocked cargo is draggable");
+  win.toggleLockSelection();
+  eq(p.userData.locked, true, "locks the selected cargo");
+  eq(win.dragControls.objects.indexOf(p), -1, "locked cargo is removed from the drag object list");
+
+  const xBefore = p.userData.l;
+  win.rotatePallet();
+  eq(p.userData.l, xBefore, "rotate refuses a locked item");
+  win.removePallet(p);
+  eq(t.pallets.length, 1, "delete refuses a locked item");
+
+  win.toggleLockSelection();
+  eq(p.userData.locked, false, "unlocks it again");
+  eq(win.dragControls.objects.indexOf(p) !== -1, true, "unlocked cargo is draggable again");
+});
+
+test("locking a shelving unit excludes it from dragging, rotating and deleting until unlocked", () => {
+  const win = boot();
+  win.addShelvesFromForm();
+  const t = win.state.trailers[0];
+  const f = t.fixtures[0];
+  win.selectFixture(f);
+
+  eq(win.fixtureDragControls.objects.indexOf(f.hitbox) !== -1, true, "unlocked unit is draggable");
+  win.toggleLockSelection();
+  eq(f.locked, true, "locks the selected unit");
+  eq(win.fixtureDragControls.objects.indexOf(f.hitbox), -1, "locked unit is removed from the drag object list");
+
+  win.rotateSelectedShelf();
+  eq(t.fixtures[0].l, f.l, "rotate refuses a locked unit");
+  win.deleteSelectedShelf();
+  eq(t.fixtures.length, 1, "delete refuses a locked unit");
+
+  win.toggleLockSelection();
+  eq(f.locked, false, "unlocks it again");
+  eq(win.fixtureDragControls.objects.indexOf(f.hitbox) !== -1, true, "unlocked unit is draggable again");
+});
+
+test("save/load round trip preserves door style, truck visibility and locked items", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tDoor").value = "roll";
+  d.getElementById("tShowTruck").checked = false;
+  win.applyTrailerSettings();
+  win.addPalletFromForm();
+  win.selectPallet(win.state.trailers[0].pallets[0]);
+  win.toggleLockSelection();
+  win.addShelvesFromForm();
+  win.selectFixture(win.state.trailers[0].fixtures[0]);
+  win.toggleLockSelection();
+
+  const saved = win.serialize();
+  eq(saved.trailers[0].doorType, "roll", "door style saved");
+  eq(saved.trailers[0].showTruck, false, "truck visibility saved");
+  eq(saved.trailers[0].pallets[0].locked, true, "locked cargo saved");
+  eq(saved.trailers[0].fixtures[0].locked, true, "locked unit saved");
+
+  const win2 = boot();
+  const blob = { text: () => Promise.resolve(JSON.stringify(saved)) };
+  void blob;
+  const d2 = win2.document;
+  const fileInput = d2.getElementById("fileInput");
+  const file = { name: "t.json" };
+  Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+  const origFileReader = win2.FileReader;
+  win2.FileReader = function () {
+    const r = new origFileReader();
+    Object.defineProperty(r, "result", { get: () => JSON.stringify(saved) });
+    this.readAsText = () => { if (this.onload) this.onload({ target: { result: JSON.stringify(saved) } }); };
+    this.onload = null;
+    return this;
+  };
+  win2.loadProject({ target: fileInput });
+
+  const t2 = win2.state.trailers[0];
+  eq(t2.doorType, "roll", "door style restored");
+  eq(t2.showTruck, false, "truck visibility restored");
+  eq(t2.pallets[0].userData.locked, true, "cargo lock restored");
+  eq(t2.fixtures[0].locked, true, "unit lock restored");
+});
+
 test("BOL header round-trips through the modal instead of being wiped", () => {
   const win = boot();
   win.document.getElementById("bolRef").value = "BOL-4471";

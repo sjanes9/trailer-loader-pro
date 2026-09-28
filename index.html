@@ -149,6 +149,16 @@
     </div>
     <label>Max payload (lb)</label>
     <input type="number" id="tMaxWeight" min="0" step="100" value="45000">
+    <label>Rear door</label>
+    <select id="tDoor">
+      <option value="none">None</option>
+      <option value="single">Single swing door</option>
+      <option value="roll">Roll-up (pull-down) door</option>
+      <option value="double" selected>Double swing doors</option>
+    </select>
+    <label style="display:inline-flex; align-items:center; gap:6px; text-transform:none; font-weight:normal; margin:2px 0 8px">
+      <input type="checkbox" id="tShowTruck" checked style="width:auto; margin:0"> Show truck cab
+    </label>
     <p class="hint">Preset dimensions are nominal starting points only. Confirm against the actual trailer or container before committing a load plan.</p>
     <button class="update-btn" id="btnApplyTrailer">Apply trailer settings</button>
     <div class="row">
@@ -264,9 +274,10 @@
       <div><button class="util-btn" id="btnRotate">Rotate 90</button></div>
       <div><button class="util-btn" id="btnDuplicate">Duplicate</button></div>
     </div>
+    <button class="util-btn" style="background:var(--slate)" id="btnLockSel">Lock selected</button>
     <button class="warn-btn" id="btnDeleteSel">Delete selected</button>
     <button id="delToggle" class="util-btn" style="background:var(--grey)">Delete mode: off</button>
-    <p class="hint">Drag a pallet to place it. Keyboard: R rotates, D duplicates, Delete removes the selection. Use [ and ] to hide or show the side panels.</p>
+    <p class="hint">Drag a pallet to place it. Keyboard: R rotates, D duplicates, L locks/unlocks, Delete removes the selection. Use [ and ] to hide or show the side panels. A locked item (cargo or shelving unit) can't be dragged, rotated or deleted until unlocked.</p>
   </div>
 </div>
 
@@ -315,7 +326,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.12.2";
+var APP_VERSION = "2.13.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -333,14 +344,14 @@ var PRESETS = [
   { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94,  group: "Semi trailers & containers" },
   { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102, group: "Semi trailers & containers" },
   { id: "uhaul10", name: "U-Haul 10 ft truck", l: 119, w: 75, h: 73,  maxWeight: 2850,  group: "U-Haul box trucks" },
-  { id: "uhaul15", name: "U-Haul 15 ft truck", l: 180, w: 92, h: 86,  maxWeight: 6385,  group: "U-Haul box trucks" },
-  { id: "uhaul20", name: "U-Haul 20 ft truck", l: 234, w: 92, h: 86,  maxWeight: 5700,  group: "U-Haul box trucks" },
-  { id: "uhaul26", name: "U-Haul 26 ft truck", l: 314, w: 98, h: 99,  maxWeight: 12859, group: "U-Haul box trucks" },
-  { id: "uhaul29", name: "U-Haul 29 ft truck", l: 350, w: 97, h: 105, maxWeight: 11939, group: "U-Haul box trucks" },
+  { id: "uhaul15", name: "U-Haul 15 ft truck", l: 180, w: 92, h: 86,  maxWeight: 6385,  group: "U-Haul box trucks", cabOver: true },
+  { id: "uhaul20", name: "U-Haul 20 ft truck", l: 234, w: 92, h: 86,  maxWeight: 5700,  group: "U-Haul box trucks", cabOver: true },
+  { id: "uhaul26", name: "U-Haul 26 ft truck", l: 314, w: 98, h: 99,  maxWeight: 12859, group: "U-Haul box trucks", cabOver: true },
+  { id: "uhaul29", name: "U-Haul 29 ft truck", l: 350, w: 97, h: 105, maxWeight: 11939, group: "U-Haul box trucks", cabOver: true },
   { id: "penske12", name: "Penske 12 ft truck", l: 144, w: 78, h: 73, maxWeight: 3100,  group: "Penske box trucks" },
-  { id: "penske16", name: "Penske 16 ft truck", l: 192, w: 91, h: 78, maxWeight: 4300,  group: "Penske box trucks" },
-  { id: "penske22", name: "Penske 22 ft truck", l: 263, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks" },
-  { id: "penske26", name: "Penske 26 ft truck", l: 311, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks" },
+  { id: "penske16", name: "Penske 16 ft truck", l: 192, w: 91, h: 78, maxWeight: 4300,  group: "Penske box trucks", cabOver: true },
+  { id: "penske22", name: "Penske 22 ft truck", l: 263, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks", cabOver: true },
+  { id: "penske26", name: "Penske 26 ft truck", l: 311, w: 97, h: 97, maxWeight: 10000, group: "Penske box trucks", cabOver: true },
   { id: "custom", name: "Custom",          l: 0,   w: 0,   h: 0   }
 ];
 
@@ -535,6 +546,7 @@ function wireUI() {
   $("btnUpdate").onclick = updatePallet;
   $("btnRotate").onclick = rotateSelection;
   $("btnDuplicate").onclick = duplicatePallet;
+  $("btnLockSel").onclick = toggleLockSelection;
   $("btnDeleteSel").onclick = deleteSelection;
   $("delToggle").onclick = toggleDelete;
 
@@ -564,6 +576,7 @@ function onKeyDown(e) {
   if (tag === "input" || tag === "textarea" || tag === "select") return;
   if (e.key === "r" || e.key === "R") rotateSelection();
   else if (e.key === "d" || e.key === "D") duplicatePallet();
+  else if (e.key === "l" || e.key === "L") toggleLockSelection();
   else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); }
   else if (e.key === "Escape") { selectPallet(null); deselectFixture(); }
   else if (e.key === "[") toggleSidebar();
@@ -592,7 +605,27 @@ function buildTrailerMeshes(t) {
   [floor, frame].forEach(function (m) { m.visible = false; scene.add(m); });
 
   t.truck = buildTruckMeshes(t.dims.w / 2);
+  var preset = matchingPreset(t.dims);
+  if (preset && preset.cabOver) t.truck.push(buildCabOverMesh(t.dims));
   t.truck.forEach(function (m) { m.visible = false; scene.add(m); });
+
+  t.doorMeshes = buildDoorMeshes(t.doorType, t.dims);
+  t.doorMeshes.forEach(function (m) { m.visible = false; scene.add(m); });
+}
+
+/* The preset (if any) matching the current dimensions -- used to decide
+   whether a box truck's cab-over storage cubbie applies, and to preselect
+   the Preset dropdown. Compared in feet, rounded the same way the L/W/H
+   fields round-trip through them (applyTrailerSettings converts feet back
+   to inches), so a preset chosen from the dropdown still matches itself
+   after that conversion even when its inch dims aren't a whole number of
+   feet (e.g. 92 in = 7.67 ft, which converts back to 92.04 in, not 92). */
+function matchingPreset(dims) {
+  return PRESETS.filter(function (p) {
+    return round2(dims.l / IN_PER_FT) === round2(p.l / IN_PER_FT) &&
+           round2(dims.w / IN_PER_FT) === round2(p.w / IN_PER_FT) &&
+           round2(dims.h / IN_PER_FT) === round2(p.h / IN_PER_FT);
+  })[0] || null;
 }
 
 /* Tractor unit coupled to the trailer nose (x=0), built entirely from boxes
@@ -635,6 +668,68 @@ function buildTruckMeshes(centerZ) {
   return [cab, hood, bumper].concat(wheels);
 }
 
+/* U-Haul's and Penske's larger box trucks (see the `cabOver` presets above)
+   extend the box forward over the cab roof as a walk-through storage
+   cubbie; their smallest (cutaway) trucks don't have one. Purely cosmetic --
+   part of the truck-cab group, so it shares that group's visibility. */
+function buildCabOverMesh(dims) {
+  var depth = 30, height = Math.min(30, dims.h * 0.32);
+  var m = new THREE.Mesh(
+    new THREE.BoxGeometry(depth, height, dims.w),
+    new THREE.MeshPhongMaterial({ color: 0xe9e9ec })
+  );
+  m.position.set(-depth / 2, dims.h - height / 2, dims.w / 2);
+  return m;
+}
+
+/* Rear door look, chosen per trailer: "double" (barn doors, the common
+   case), "single" (one swing door hinged at the left wall), "roll" (a
+   corrugated roll-up/pull-down shutter) or "none". Purely cosmetic, at the
+   rear (x = dims.l) -- clamping and stats only ever use t.dims. */
+function buildDoorMeshes(type, dims) {
+  if (!type || type === "none") return [];
+  var x = dims.l + 0.3, depth = 2;
+  var panelMat = new THREE.MeshPhongMaterial({ color: 0xbfc6cc });
+  var seamMat = new THREE.MeshPhongMaterial({ color: 0x2b2b2e });
+
+  function panel(w, cz) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(depth, dims.h, w), panelMat);
+    m.position.set(x, dims.h / 2, cz);
+    return m;
+  }
+  function bar(w, cz) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(depth + 0.5, dims.h, w), seamMat);
+    m.position.set(x, dims.h / 2, cz);
+    return m;
+  }
+
+  if (type === "double") {
+    var half = dims.w / 2;
+    return [panel(half - 1.5, half / 2), panel(half - 1.5, half + half / 2), bar(3, half)];
+  }
+  if (type === "single") {
+    return [panel(dims.w - 3, dims.w / 2), bar(3, 1.5)];
+  }
+  if (type === "roll") {
+    var roll = new THREE.Mesh(new THREE.BoxGeometry(depth, dims.h, dims.w - 3), makeRollDoorMaterial());
+    roll.position.set(x, dims.h / 2, dims.w / 2);
+    return [roll];
+  }
+  return [];
+}
+
+function makeRollDoorMaterial() {
+  var canvas = document.createElement("canvas");
+  canvas.width = 32; canvas.height = 256;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#c7ccd1"; ctx.fillRect(0, 0, 32, 256);
+  for (var y = 0; y < 256; y += 16) {
+    ctx.fillStyle = "#9aa1a8";
+    ctx.fillRect(0, y, 32, 7);
+  }
+  return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
+}
+
 function makeTruckFaceMaterial() {
   var canvas = document.createElement("canvas");
   canvas.width = 256; canvas.height = 256;
@@ -665,6 +760,12 @@ function disposeTrailerMeshes(t) {
     disposeMaterial(m.material);
   });
   t.truck = [];
+  (t.doorMeshes || []).forEach(function (m) {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    disposeMaterial(m.material);
+  });
+  t.doorMeshes = [];
 }
 
 function addNewTrailer(opts) {
@@ -674,9 +775,11 @@ function addNewTrailer(opts) {
     name: opts.name || ("Trailer " + (state.trailers.length + 1)),
     dims: opts.dims || { l: preset.l, w: preset.w, h: preset.h },
     maxWeight: num(opts.maxWeight, 45000),
+    doorType: opts.doorType || "double",
+    showTruck: opts.showTruck !== false,
     pallets: [],
     fixtures: [],
-    floor: null, frame: null, truck: []
+    floor: null, frame: null, truck: [], doorMeshes: []
   };
   buildTrailerMeshes(t);
   state.trailers.push(t);
@@ -716,6 +819,7 @@ function switchTrailer() {
     if (t.frame) t.frame.visible = false;
     if (t.floor) t.floor.visible = false;
     (t.truck || []).forEach(function (m) { m.visible = false; });
+    (t.doorMeshes || []).forEach(function (m) { m.visible = false; });
     (t.fixtures || []).forEach(function (f) { f.hitbox.visible = false; });
   });
 
@@ -728,7 +832,8 @@ function switchTrailer() {
   t.pallets.forEach(function (p) { scene.add(p); });
   if (t.frame) t.frame.visible = true;
   if (t.floor) t.floor.visible = true;
-  (t.truck || []).forEach(function (m) { m.visible = true; });
+  (t.truck || []).forEach(function (m) { m.visible = t.showTruck !== false; });
+  (t.doorMeshes || []).forEach(function (m) { m.visible = true; });
   (t.fixtures || []).forEach(function (f) { f.hitbox.visible = true; });
 
   fillTrailerForm(t);
@@ -748,9 +853,9 @@ function fillTrailerForm(t) {
   $("tW").value = round2(t.dims.w / IN_PER_FT);
   $("tH").value = round2(t.dims.h / IN_PER_FT);
   $("tMaxWeight").value = t.maxWeight;
-  var match = PRESETS.filter(function (p) {
-    return p.l === t.dims.l && p.w === t.dims.w && p.h === t.dims.h;
-  })[0];
+  $("tDoor").value = t.doorType || "double";
+  $("tShowTruck").checked = t.showTruck !== false;
+  var match = matchingPreset(t.dims);
   $("trailerPreset").value = match ? match.id : "custom";
 }
 
@@ -770,10 +875,13 @@ function applyTrailerSettings() {
   t.name = ($("trailerName").value || t.name).trim();
   t.dims = { l: l, w: w, h: h };
   t.maxWeight = num($("tMaxWeight").value, 0);
+  t.doorType = $("tDoor").value;
+  t.showTruck = $("tShowTruck").checked;
 
   buildTrailerMeshes(t);
   t.frame.visible = true; t.floor.visible = true;
-  t.truck.forEach(function (m) { m.visible = true; });
+  t.truck.forEach(function (m) { m.visible = t.showTruck; });
+  t.doorMeshes.forEach(function (m) { m.visible = true; });
 
   t.pallets.forEach(function (p) { clampToTrailer(p); });
   refreshTrailerSelect(state.current);
@@ -906,7 +1014,7 @@ function addShelvesFromForm() {
   var levels = computeLevelLabels($("shelfStart").value || "1", count);
   var hitbox = buildShelfUnit(levels, l, w, totalH, pos);
   scene.add(hitbox);
-  var fixture = { levels: levels, l: l, w: w, totalH: totalH, pos: pos, hitbox: hitbox };
+  var fixture = { levels: levels, l: l, w: w, totalH: totalH, pos: pos, hitbox: hitbox, locked: false };
   hitbox.userData = fixture;
   t.fixtures.push(fixture);
   clampToTrailer(hitbox);
@@ -1000,6 +1108,7 @@ function rebuildFixture(f, l, w, totalH, newPos) {
 function updateSelectedShelf() {
   var f = state.selectedFixture;
   if (!f || !currentTrailer()) { toast("Select a shelving unit first.", "err"); return; }
+  if (f.locked) { toast("This unit is locked. Unlock it first.", "err"); return; }
 
   var l = num($("shelfL").value, f.l), w = num($("shelfW").value, f.w), totalH = num($("shelfH").value, f.totalH);
   if (l <= 0 || w <= 0 || totalH <= 0) { toast("Shelf dimensions must be greater than zero.", "err"); return; }
@@ -1016,6 +1125,7 @@ function updateSelectedShelf() {
 function rotateSelectedShelf() {
   var f = state.selectedFixture;
   if (!f || !currentTrailer()) { toast("Select a shelving unit first.", "err"); return; }
+  if (f.locked) { toast("This unit is locked. Unlock it first.", "err"); return; }
   rebuildFixture(f, f.w, f.l, f.totalH, { x: f.pos.x, y: f.pos.y, z: f.pos.z });
 }
 
@@ -1023,8 +1133,28 @@ function deleteSelectedShelf() {
   var t = currentTrailer();
   var f = state.selectedFixture;
   if (!f || !t) { toast("Select a shelving unit first.", "err"); return; }
+  if (f.locked) { toast("This unit is locked. Unlock it first.", "err"); return; }
   removeFixture(t.fixtures.indexOf(f));
   toast("Shelving unit removed.", "ok");
+}
+
+/* Shared by the Selection panel's Lock button and the L key. Works on
+   whichever kind of thing is selected -- cargo or a shelving unit -- since
+   both a pallet's userData and a fixture object carry a `locked` flag.
+   Locking excludes the item from its DragControls object list (see
+   setupDragControls / setupFixtureDragControls) so it can't be dragged, and
+   rotate/delete refuse to touch it either; it can still be selected and
+   unlocked again. */
+function toggleLockSelection() {
+  var target = state.selected ? state.selected.userData : state.selectedFixture;
+  if (!target) { toast("Select something first.", "err"); return; }
+  target.locked = !target.locked;
+  setupDragControls();
+  setupFixtureDragControls();
+  updateSelectionUI();
+  updateManifest();
+  updateFixtureList();
+  toast(target.locked ? "Locked in place." : "Unlocked.", "ok");
 }
 
 function disposeFixtures(t) {
@@ -1086,7 +1216,7 @@ function updateFixtureList() {
     div.className = "manifest-item" + (f === state.selectedFixture ? " sel" : "");
 
     var title = document.createElement("b");
-    title.textContent = "Unit: Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "");
+    title.textContent = (f.locked ? "🔒 " : "") + "Unit: Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "");
 
     var meta = document.createElement("div");
     meta.className = "meta";
@@ -1329,6 +1459,7 @@ function normalizePallet(d) {
     img: typeof d.img === "string" ? d.img : "",
     model: typeof d.model === "string" ? d.model : "",
     color: typeof d.color === "string" && d.color ? d.color : randomColor(),
+    locked: !!d.locked,
     pos: { x: num(pos.x, 24), y: num(pos.y, 24), z: num(pos.z, 20) }
   };
 }
@@ -1638,6 +1769,7 @@ function updatePallet() {
 function rotatePallet() {
   var p = state.selected;
   if (!p) { toast("Select a pallet first.", "err"); return; }
+  if (p.userData.locked) { toast("This item is locked. Unlock it first.", "err"); return; }
   var d = p.userData;
   var swap = d.l; d.l = d.w; d.w = swap;
   var swap2 = d.l2; d.l2 = d.w2; d.w2 = swap2;
@@ -1656,6 +1788,7 @@ function duplicatePallet() {
   var d = p.userData;
   var copy = JSON.parse(JSON.stringify(d));
   copy.label = nextLabel(d.label);
+  copy.locked = false;
   copy.pos = { x: d.pos.x, y: p.position.y, z: p.position.z };
   copy.pos.x = p.position.x + d.l;
   var mesh = addPallet(copy);
@@ -1664,6 +1797,7 @@ function duplicatePallet() {
 
 function removePallet(p) {
   if (!p) { toast("Select a pallet first.", "err"); return; }
+  if (p.userData.locked) { toast("This item is locked. Unlock it first.", "err"); return; }
   var t = currentTrailer();
   if (!t) return;
   var i = t.pallets.indexOf(p);
@@ -1728,11 +1862,13 @@ function fillSidebarForm(d) {
 
 function updateSelectionUI() {
   var f = state.selectedFixture;
+  var target = state.selected ? state.selected.userData : f;
   $("selectionNotice").textContent = state.selected
-    ? "Selected: " + state.selected.userData.label
+    ? "Selected: " + state.selected.userData.label + (state.selected.userData.locked ? " (locked)" : "")
     : f
-      ? "Selected: shelving unit (Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "") + ")"
+      ? "Selected: shelving unit (Shelf " + f.levels[0] + (f.levels.length > 1 ? "-" + f.levels[f.levels.length - 1] : "") + ")" + (f.locked ? " (locked)" : "")
       : "No selection";
+  $("btnLockSel").textContent = (target && target.locked) ? "Unlock selected" : "Lock selected";
 }
 
 function toggleDelete() {
@@ -1774,7 +1910,8 @@ function setupDragControls() {
   var t = currentTrailer();
   if (!t) return;
   if (dragControls) dragControls.dispose();
-  dragControls = new THREE.DragControls(t.pallets, camera, renderer.domElement);
+  var draggable = t.pallets.filter(function (p) { return !p.userData.locked; });
+  dragControls = new THREE.DragControls(draggable, camera, renderer.domElement);
   dragControls.enabled = !state.deleteMode;
   dragControls.addEventListener("dragstart", function (e) {
     orbit.enabled = false;
@@ -1842,8 +1979,16 @@ function arbitratePick(ev) {
                  Math.abs(pt.z - hb.position.z) <= hd.w + 0.01;
     cargoWins = cargoHit.distance <= fixtureHit.distance || inside;
   }
-  dragControls.enabled = cargoWins || !fixtureHit;
-  fixtureDragControls.enabled = !cargoWins;
+  var winner = cargoWins ? cargoHit : fixtureHit;
+  var locked = !!(winner && winner.object.userData.locked);
+  dragControls.enabled = (cargoWins || !fixtureHit) && !locked;
+  fixtureDragControls.enabled = !cargoWins && !locked;
+  /* A locked item is excluded from both DragControls object lists above, so
+     it would otherwise never get selected by a click either -- select it by
+     hand instead of relying on the (disabled) drag controls to do it. */
+  if (winner && locked) {
+    if (cargoWins) selectPallet(winner.object); else selectFixture(winner.object.userData);
+  }
 }
 
 /* Shelving units drag independently of cargo -- their own DragControls
@@ -1854,7 +1999,7 @@ function setupFixtureDragControls() {
   var t = currentTrailer();
   if (!t) return;
   if (fixtureDragControls) fixtureDragControls.dispose();
-  var hitboxes = t.fixtures.map(function (f) { return f.hitbox; });
+  var hitboxes = t.fixtures.filter(function (f) { return !f.locked; }).map(function (f) { return f.hitbox; });
   fixtureDragControls = new THREE.DragControls(hitboxes, camera, renderer.domElement);
   fixtureDragControls.enabled = !state.deleteMode;
   fixtureDragControls.addEventListener("dragstart", function (e) {
@@ -2027,7 +2172,7 @@ function updateManifest() {
     div.className = "manifest-item" + (p === state.selected ? " sel" : "");
 
     var title = document.createElement("b");
-    title.textContent = d.label;
+    title.textContent = (d.locked ? "🔒 " : "") + d.label;
 
     var typeLabel = itemTypeLabel(d);
     if (d.model) typeLabel += " [3D model]";
@@ -2190,6 +2335,8 @@ function serialize() {
         name: t.name,
         dims: t.dims,
         maxWeight: t.maxWeight,
+        doorType: t.doorType,
+        showTruck: t.showTruck,
         pallets: t.pallets.map(function (p) {
           var d = p.userData;
           return {
@@ -2197,12 +2344,12 @@ function serialize() {
             partCount: d.partCount, customType: d.customType,
             l: d.l, w: d.w, h: d.h, l2: d.l2, w2: d.w2, h2: d.h2,
             weight: d.weight, value: d.value, notes: d.notes,
-            img: d.img, model: d.model, color: d.color,
+            img: d.img, model: d.model, color: d.color, locked: !!d.locked,
             pos: { x: p.position.x, y: p.position.y, z: p.position.z }
           };
         }),
         fixtures: t.fixtures.map(function (f) {
-          return { levels: f.levels, l: f.l, w: f.w, totalH: f.totalH, pos: f.pos };
+          return { levels: f.levels, l: f.l, w: f.w, totalH: f.totalH, pos: f.pos, locked: !!f.locked };
         })
       };
     })
@@ -2269,7 +2416,9 @@ function loadProject(e) {
           w: num(td.dims && td.dims.w, 102),
           h: num(td.dims && td.dims.h, 110)
         },
-        maxWeight: num(td.maxWeight, 45000)
+        maxWeight: num(td.maxWeight, 45000),
+        doorType: td.doorType,
+        showTruck: td.showTruck
       });
       (td.pallets || []).forEach(function (pd) {
         var mesh = makePalletMesh(pd);
@@ -2282,7 +2431,7 @@ function loadProject(e) {
         var fpos = fd.pos || { x: 0, y: 0, z: 0 };
         var hitbox = buildShelfUnit(levels, fl, fw, fTotalH, fpos);
         scene.add(hitbox);
-        var fixture = { levels: levels, l: fl, w: fw, totalH: fTotalH, pos: fpos, hitbox: hitbox };
+        var fixture = { levels: levels, l: fl, w: fw, totalH: fTotalH, pos: fpos, hitbox: hitbox, locked: !!fd.locked };
         hitbox.userData = fixture;
         t.fixtures.push(fixture);
       });

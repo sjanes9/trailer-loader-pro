@@ -2,6 +2,36 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.13.0] - 2026-09-28
+
+### Added
+
+- **Lock cargo and shelving units in place.** A new Lock selected button
+  (and the L key) in the Selection panel locks whichever item is currently
+  selected. A locked item can't be dragged, rotated or deleted until it's
+  unlocked again, but can still be selected. Locked items show a lock icon
+  in the Cargo Manifest and Trailer Fixtures lists, and the lock state is
+  saved and loaded with the layout.
+- **Rear door style per trailer.** A new Rear door dropdown on the Trailer
+  panel (None, Single swing door, Roll-up/pull-down door, Double swing
+  doors -- the default) renders the chosen look at the back of the trailer.
+- **Show/hide the truck cab per trailer.** A new Show truck cab checkbox on
+  the Trailer panel toggles the tractor unit's visibility -- useful for
+  flatbeds, or when you just want to see the box.
+- **Cab-over storage cubbie on the larger U-Haul and Penske box truck
+  presets.** Selecting a box truck preset that has a walk-through area over
+  the cab (U-Haul 15/20/26/29 ft, Penske 16/22/26 ft) now shows that cubbie
+  above the cab; the smallest cutaway trucks (U-Haul 10 ft, Penske 12 ft)
+  don't get one, matching their real layout.
+
+### Fixed
+
+- **The Preset dropdown (and the new cab-over cubbie) could fail to
+  recognize a trailer's own preset** after its feet-displayed L/W/H
+  round-tripped through inches and back (e.g. 92 in becomes 7.67 ft, which
+  converts back to 92.04 in, not 92) -- the comparison now tolerates that
+  rounding instead of requiring an exact inch match.
+
 ## [2.12.2] - 2026-09-25
 
 ### Fixed
