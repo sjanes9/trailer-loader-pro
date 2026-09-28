@@ -461,33 +461,49 @@ test("show truck cab toggle hides/shows the truck meshes for the current trailer
   assert(win.state.trailers[0].truck.every((m) => m.visible), "rechecking shows it again");
 });
 
-test("U-Haul/Penske presets with a cab-over cubbie get an extra truck mesh; presets without one and plain trailers don't", () => {
+test("U-Haul/Penske presets with a cab-over cubbie get cab-over meshes kept separate from the truck-cab group (so hiding the cab doesn't hide the cubbie); presets without one and plain trailers don't", () => {
   const win = boot();
   const d = win.document;
-  const base = win.state.trailers[0].truck.length; // 53 ft dry van: no cab-over
+  const baseTruck = win.state.trailers[0].truck.length; // 53 ft dry van: no cab-over
 
   d.getElementById("tL").value = String(180 / 12); // U-Haul 15 ft truck dims (has a cab-over)
   d.getElementById("tW").value = String(92 / 12);
   d.getElementById("tH").value = String(86 / 12);
   win.applyTrailerSettings();
-  eq(win.state.trailers[0].truck.length, base + 2, "cab-over cubbie adds its floor and wireframe outline to the truck group");
+  eq(win.state.trailers[0].truck.length, baseTruck, "cab-over meshes are not added to the truck-cab group");
+  eq(win.state.trailers[0].cabOverMeshes.length, 2, "cab-over cubbie builds its floor and wireframe outline");
 
   d.getElementById("tL").value = String(119 / 12); // U-Haul 10 ft truck: no cab-over
   d.getElementById("tW").value = String(75 / 12);
   d.getElementById("tH").value = String(73 / 12);
   win.applyTrailerSettings();
-  eq(win.state.trailers[0].truck.length, base, "the small cutaway truck has no cab-over cubbie");
+  eq(win.state.trailers[0].cabOverMeshes.length, 0, "the small cutaway truck has no cab-over cubbie");
+});
+
+test("the cab-over cubbie sits on the cab roof and never overlaps the cab below it", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tL").value = String(263 / 12); // Penske 22 ft truck: has a cab-over cubbie
+  d.getElementById("tW").value = String(97 / 12);
+  d.getElementById("tH").value = String(97 / 12);
+  win.applyTrailerSettings();
+  const t = win.state.trailers[0];
+  const cab = t.truck[0]; // buildTruckMeshes() returns [cab, hood, bumper, ...wheels]
+  const cabTop = cab.position.y + cab.geometry.parameters.height / 2;
+  eq(t.cabOver.bottom, cabTop, "the cubbie's floor sits exactly on the cab's roof, no gap or overlap");
+  assert(t.cabOver.bottom + t.cabOver.height <= t.dims.h + 1e-6, "the cubbie doesn't poke out above the box roofline");
 });
 
 test("small cargo dragged past the front wall on a cab-over trailer clamps into the cubbie instead of the main box", () => {
   const win = boot();
   const d = win.document;
-  d.getElementById("tL").value = String(180 / 12); // U-Haul 15 ft truck: has a cab-over cubbie
-  d.getElementById("tW").value = String(92 / 12);
-  d.getElementById("tH").value = String(86 / 12);
+  d.getElementById("tL").value = String(263 / 12); // Penske 22 ft truck: real headroom above the cab
+  d.getElementById("tW").value = String(97 / 12);
+  d.getElementById("tH").value = String(97 / 12);
   win.applyTrailerSettings();
   const t = win.state.trailers[0];
   assert(t.cabOver, "this trailer has a cab-over cubbie");
+  assert(t.cabOver.height >= 10, "enough headroom above the cab for this test's item");
 
   d.getElementById("L").value = "10"; d.getElementById("W").value = "10"; d.getElementById("H").value = "10";
   win.addPalletFromForm();
@@ -499,7 +515,8 @@ test("small cargo dragged past the front wall on a cab-over trailer clamps into 
 
   assert(p.position.x < 0, "clamped into the cubbie (negative x), not pinned back at the front wall");
   assert(p.position.x - 5 >= -t.cabOver.depth - 1e-6, "stays within the cubbie's depth");
-  assert(p.position.y >= t.dims.h - t.cabOver.height - 1e-6, "snapped up to cubbie height");
+  assert(p.position.y >= t.cabOver.bottom - 1e-6, "sits at or above the cab roof, never lower (no overlap with the cab)");
+  assert(p.position.y <= t.cabOver.bottom + t.cabOver.height + 1e-6, "stays within the cubbie's own height");
 });
 
 test("cargo too big for the cubbie is pinned at the front wall instead of poking into it", () => {

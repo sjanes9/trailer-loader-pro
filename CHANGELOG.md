@@ -2,6 +2,18 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.13.2] - 2026-09-28
+
+### Fixed
+
+- **The cab-over cubbie disappeared when "Show truck cab" was unchecked,**
+  and its usable space overlapped the cab below it (the cab's roof could
+  poke up through the cubbie floor, fouling the storage space). The cubbie
+  is now its own group, independent of the truck cab's visibility, and its
+  floor is anchored to the cab's actual roof height instead of a fraction of
+  the box's own height, so it always sits flush on top of the cab with no
+  gap or overlap.
+
 ## [2.13.1] - 2026-09-28
 
 ### Added

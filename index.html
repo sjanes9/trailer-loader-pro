@@ -326,7 +326,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.13.1";
+var APP_VERSION = "2.13.2";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -605,10 +605,18 @@ function buildTrailerMeshes(t) {
   [floor, frame].forEach(function (m) { m.visible = false; scene.add(m); });
 
   t.truck = buildTruckMeshes(t.dims.w / 2);
-  var preset = matchingPreset(t.dims);
-  t.cabOver = (preset && preset.cabOver) ? cabOverDims(t.dims) : null;
-  if (t.cabOver) t.truck = t.truck.concat(buildCabOverMesh(t.dims));
   t.truck.forEach(function (m) { m.visible = false; scene.add(m); });
+
+  // truck[0] is the cab (see buildTruckMeshes) -- reading its actual top
+  // back out keeps the cubbie sitting flush on the cab roof with no gap or
+  // overlap, without duplicating the cab's own numbers here.
+  var cabTop = t.truck[0].position.y + t.truck[0].geometry.parameters.height / 2;
+  var preset = matchingPreset(t.dims);
+  t.cabOver = (preset && preset.cabOver) ? cabOverDims(t.dims, cabTop) : null;
+  // Kept separate from t.truck: the cubbie is part of the box's own storage
+  // space, not the cab, so it stays usable even with "Show truck cab" off.
+  t.cabOverMeshes = t.cabOver ? buildCabOverMesh(t.cabOver, t.dims.w) : [];
+  t.cabOverMeshes.forEach(function (m) { m.visible = false; scene.add(m); });
 
   t.doorMeshes = buildDoorMeshes(t.doorType, t.dims);
   t.doorMeshes.forEach(function (m) { m.visible = false; scene.add(m); });
@@ -671,33 +679,38 @@ function buildTruckMeshes(centerZ) {
 
 /* U-Haul's and Penske's larger box trucks (see the `cabOver` presets above)
    extend the box forward over the cab roof as a walk-through storage
-   cubbie; their smallest (cutaway) trucks don't have one. Purely cosmetic --
-   part of the truck-cab group, so it shares that group's visibility. */
-/* Size of the cubbie, shared by its mesh and by clampToTrailer()'s "can
-   cargo go up there" check -- it's a small nose-forward, top-of-box volume
-   from x=-depth to x=0, spanning the full trailer width. */
-function cabOverDims(dims) {
-  return { depth: 30, height: Math.min(30, dims.h * 0.32) };
+   cubbie; their smallest (cutaway) trucks don't have one. It's usable
+   storage space that belongs to the box, not the cab -- kept in its own
+   t.cabOverMeshes group so it stays visible even with "Show truck cab" off. */
+/* Size and floor height of the cubbie, shared by its mesh and by
+   clampToTrailer()'s "can cargo go up there" check. It's a small
+   nose-forward volume from x=-depth to x=0, spanning the full trailer
+   width, sitting directly on the cab roof (cabTop) so it can never overlap
+   the cab below it -- capped at the box's own roofline dims.h except for a
+   forced 8 in minimum on the rare preset where the cab roof is at (or
+   above) the interior height (e.g. Penske 16 ft: confirm against the actual
+   vehicle, as the app's own hint already says for every preset). */
+function cabOverDims(dims, cabTop) {
+  return { depth: 30, height: Math.max(Math.min(30, dims.h - cabTop), 8), bottom: cabTop };
 }
 
 /* A solid box here would hide any cargo placed inside it (see
    clampToTrailer()'s cab-over handling), so this is drawn the same way as
    the main trailer body: a solid floor to rest cargo on, plus a wireframe
    outline for the shape -- nothing that blocks the view into it. */
-function buildCabOverMesh(dims) {
-  var c = cabOverDims(dims);
+function buildCabOverMesh(c, trailerW) {
   var floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(c.depth, dims.w),
+    new THREE.PlaneGeometry(c.depth, trailerW),
     new THREE.MeshPhongMaterial({ color: 0x6a6a75, side: THREE.DoubleSide })
   );
   floor.rotation.x = Math.PI / 2;
-  floor.position.set(-c.depth / 2, dims.h - c.height, dims.w / 2);
+  floor.position.set(-c.depth / 2, c.bottom, trailerW / 2);
 
   var frame = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(c.depth, c.height, dims.w)),
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(c.depth, c.height, trailerW)),
     new THREE.LineBasicMaterial({ color: 0x00ff00 })
   );
-  frame.position.set(-c.depth / 2, dims.h - c.height / 2, dims.w / 2);
+  frame.position.set(-c.depth / 2, c.bottom + c.height / 2, trailerW / 2);
 
   return [floor, frame];
 }
@@ -780,6 +793,13 @@ function disposeTrailerMeshes(t) {
     disposeMaterial(m.material);
   });
   t.truck = [];
+  (t.cabOverMeshes || []).forEach(function (m) {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    disposeMaterial(m.material);
+  });
+  t.cabOverMeshes = [];
+  t.cabOver = null;
   (t.doorMeshes || []).forEach(function (m) {
     scene.remove(m);
     if (m.geometry) m.geometry.dispose();
@@ -799,7 +819,7 @@ function addNewTrailer(opts) {
     showTruck: opts.showTruck !== false,
     pallets: [],
     fixtures: [],
-    floor: null, frame: null, truck: [], doorMeshes: []
+    floor: null, frame: null, truck: [], cabOverMeshes: [], cabOver: null, doorMeshes: []
   };
   buildTrailerMeshes(t);
   state.trailers.push(t);
@@ -839,6 +859,7 @@ function switchTrailer() {
     if (t.frame) t.frame.visible = false;
     if (t.floor) t.floor.visible = false;
     (t.truck || []).forEach(function (m) { m.visible = false; });
+    (t.cabOverMeshes || []).forEach(function (m) { m.visible = false; });
     (t.doorMeshes || []).forEach(function (m) { m.visible = false; });
     (t.fixtures || []).forEach(function (f) { f.hitbox.visible = false; });
   });
@@ -853,6 +874,7 @@ function switchTrailer() {
   if (t.frame) t.frame.visible = true;
   if (t.floor) t.floor.visible = true;
   (t.truck || []).forEach(function (m) { m.visible = t.showTruck !== false; });
+  (t.cabOverMeshes || []).forEach(function (m) { m.visible = true; });
   (t.doorMeshes || []).forEach(function (m) { m.visible = true; });
   (t.fixtures || []).forEach(function (f) { f.hitbox.visible = true; });
 
@@ -901,6 +923,7 @@ function applyTrailerSettings() {
   buildTrailerMeshes(t);
   t.frame.visible = true; t.floor.visible = true;
   t.truck.forEach(function (m) { m.visible = t.showTruck; });
+  t.cabOverMeshes.forEach(function (m) { m.visible = true; });
   t.doorMeshes.forEach(function (m) { m.visible = true; });
 
   t.pallets.forEach(function (p) { clampToTrailer(p); });
@@ -2088,7 +2111,7 @@ function clampToTrailer(p) {
                   hd.l * 2 <= c.depth + 1e-6 && hd.h * 2 <= c.height + 1e-6;
   if (inCabOver) {
     p.position.x = Math.min(Math.max(p.position.x, -c.depth + hd.l), -hd.l);
-    p.position.y = Math.min(Math.max(p.position.y, t.dims.h - c.height + hd.h), t.dims.h - hd.h);
+    p.position.y = Math.min(Math.max(p.position.y, c.bottom + hd.h), c.bottom + c.height - hd.h);
   } else {
     p.position.x = Math.min(Math.max(p.position.x, hd.l), Math.max(hd.l, t.dims.l - hd.l));
     p.position.y = Math.min(Math.max(p.position.y, hd.h), Math.max(hd.h, t.dims.h - hd.h));
