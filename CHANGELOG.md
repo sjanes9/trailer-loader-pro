@@ -2,6 +2,19 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.13.1] - 2026-09-28
+
+### Added
+
+- **Cargo can now be placed in the cab-over cubbie** on U-Haul/Penske
+  presets that have one. Drag a small enough item's nose-side edge past the
+  front wall and it clamps into the cubbie (snapping up to its height)
+  instead of the main box; too big to fit, and it rests against the front
+  wall like before. The cubbie itself is now drawn as a floor plus a
+  wireframe outline (matching the rest of the trailer) instead of a solid
+  box, so cargo placed inside is actually visible instead of being hidden
+  inside solid geometry.
+
 ## [2.13.0] - 2026-09-28
 
 ### Added

@@ -326,7 +326,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.13.0";
+var APP_VERSION = "2.13.1";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -606,7 +606,8 @@ function buildTrailerMeshes(t) {
 
   t.truck = buildTruckMeshes(t.dims.w / 2);
   var preset = matchingPreset(t.dims);
-  if (preset && preset.cabOver) t.truck.push(buildCabOverMesh(t.dims));
+  t.cabOver = (preset && preset.cabOver) ? cabOverDims(t.dims) : null;
+  if (t.cabOver) t.truck = t.truck.concat(buildCabOverMesh(t.dims));
   t.truck.forEach(function (m) { m.visible = false; scene.add(m); });
 
   t.doorMeshes = buildDoorMeshes(t.doorType, t.dims);
@@ -672,14 +673,33 @@ function buildTruckMeshes(centerZ) {
    extend the box forward over the cab roof as a walk-through storage
    cubbie; their smallest (cutaway) trucks don't have one. Purely cosmetic --
    part of the truck-cab group, so it shares that group's visibility. */
+/* Size of the cubbie, shared by its mesh and by clampToTrailer()'s "can
+   cargo go up there" check -- it's a small nose-forward, top-of-box volume
+   from x=-depth to x=0, spanning the full trailer width. */
+function cabOverDims(dims) {
+  return { depth: 30, height: Math.min(30, dims.h * 0.32) };
+}
+
+/* A solid box here would hide any cargo placed inside it (see
+   clampToTrailer()'s cab-over handling), so this is drawn the same way as
+   the main trailer body: a solid floor to rest cargo on, plus a wireframe
+   outline for the shape -- nothing that blocks the view into it. */
 function buildCabOverMesh(dims) {
-  var depth = 30, height = Math.min(30, dims.h * 0.32);
-  var m = new THREE.Mesh(
-    new THREE.BoxGeometry(depth, height, dims.w),
-    new THREE.MeshPhongMaterial({ color: 0xe9e9ec })
+  var c = cabOverDims(dims);
+  var floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(c.depth, dims.w),
+    new THREE.MeshPhongMaterial({ color: 0x6a6a75, side: THREE.DoubleSide })
   );
-  m.position.set(-depth / 2, dims.h - height / 2, dims.w / 2);
-  return m;
+  floor.rotation.x = Math.PI / 2;
+  floor.position.set(-c.depth / 2, dims.h - c.height, dims.w / 2);
+
+  var frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(c.depth, c.height, dims.w)),
+    new THREE.LineBasicMaterial({ color: 0x00ff00 })
+  );
+  frame.position.set(-c.depth / 2, dims.h - c.height / 2, dims.w / 2);
+
+  return [floor, frame];
 }
 
 /* Rear door look, chosen per trailer: "double" (barn doors, the common
@@ -2051,13 +2071,29 @@ function halfDims(p) {
   };
 }
 
+/* A box truck with a cab-over cubbie (see cabOverDims()) has a second,
+   smaller volume cargo can occupy: x from -depth to 0, at the top of the
+   box, full width. An item is placed there once it's small enough to fit
+   the cubbie and its nose-side edge is dragged past the front wall (x < 0
+   at its own half-length in); it then clamps inside that volume instead of
+   the main box, snapping up to cubbie height the way cargo snaps onto an
+   assigned shelf. Too big to fit -> falls back to resting against the
+   front wall like any other oversized-for-the-gap item. */
 function clampToTrailer(p) {
   var t = currentTrailer();
   if (!t) return;
   var hd = halfDims(p);
-  p.position.x = Math.min(Math.max(p.position.x, hd.l), Math.max(hd.l, t.dims.l - hd.l));
+  var c = t.cabOver;
+  var inCabOver = c && (p.position.x - hd.l) < 0 &&
+                  hd.l * 2 <= c.depth + 1e-6 && hd.h * 2 <= c.height + 1e-6;
+  if (inCabOver) {
+    p.position.x = Math.min(Math.max(p.position.x, -c.depth + hd.l), -hd.l);
+    p.position.y = Math.min(Math.max(p.position.y, t.dims.h - c.height + hd.h), t.dims.h - hd.h);
+  } else {
+    p.position.x = Math.min(Math.max(p.position.x, hd.l), Math.max(hd.l, t.dims.l - hd.l));
+    p.position.y = Math.min(Math.max(p.position.y, hd.h), Math.max(hd.h, t.dims.h - hd.h));
+  }
   p.position.z = Math.min(Math.max(p.position.z, hd.w), Math.max(hd.w, t.dims.w - hd.w));
-  p.position.y = Math.min(Math.max(p.position.y, hd.h), Math.max(hd.h, t.dims.h - hd.h));
   syncPosition(p);
 }
 

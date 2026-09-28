@@ -470,13 +470,68 @@ test("U-Haul/Penske presets with a cab-over cubbie get an extra truck mesh; pres
   d.getElementById("tW").value = String(92 / 12);
   d.getElementById("tH").value = String(86 / 12);
   win.applyTrailerSettings();
-  eq(win.state.trailers[0].truck.length, base + 1, "cab-over cubbie adds one mesh to the truck group");
+  eq(win.state.trailers[0].truck.length, base + 2, "cab-over cubbie adds its floor and wireframe outline to the truck group");
 
   d.getElementById("tL").value = String(119 / 12); // U-Haul 10 ft truck: no cab-over
   d.getElementById("tW").value = String(75 / 12);
   d.getElementById("tH").value = String(73 / 12);
   win.applyTrailerSettings();
   eq(win.state.trailers[0].truck.length, base, "the small cutaway truck has no cab-over cubbie");
+});
+
+test("small cargo dragged past the front wall on a cab-over trailer clamps into the cubbie instead of the main box", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tL").value = String(180 / 12); // U-Haul 15 ft truck: has a cab-over cubbie
+  d.getElementById("tW").value = String(92 / 12);
+  d.getElementById("tH").value = String(86 / 12);
+  win.applyTrailerSettings();
+  const t = win.state.trailers[0];
+  assert(t.cabOver, "this trailer has a cab-over cubbie");
+
+  d.getElementById("L").value = "10"; d.getElementById("W").value = "10"; d.getElementById("H").value = "10";
+  win.addPalletFromForm();
+  const p = t.pallets[0];
+
+  // Drag its nose-side edge past the front wall (x=0).
+  p.position.set(2, 20, t.dims.w / 2);
+  win.clampToTrailer(p);
+
+  assert(p.position.x < 0, "clamped into the cubbie (negative x), not pinned back at the front wall");
+  assert(p.position.x - 5 >= -t.cabOver.depth - 1e-6, "stays within the cubbie's depth");
+  assert(p.position.y >= t.dims.h - t.cabOver.height - 1e-6, "snapped up to cubbie height");
+});
+
+test("cargo too big for the cubbie is pinned at the front wall instead of poking into it", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tL").value = String(180 / 12);
+  d.getElementById("tW").value = String(92 / 12);
+  d.getElementById("tH").value = String(86 / 12);
+  win.applyTrailerSettings();
+  const t = win.state.trailers[0];
+
+  d.getElementById("L").value = "48"; d.getElementById("W").value = "40"; d.getElementById("H").value = "48"; // too big for the cubbie
+  win.addPalletFromForm();
+  const p = t.pallets[0];
+
+  p.position.set(2, 24, t.dims.w / 2);
+  win.clampToTrailer(p);
+
+  eq(p.position.x, 24, "oversized item rests against the front wall (x = half its length), not inside the cubbie");
+});
+
+test("a trailer with no cab-over cubbie clamps cargo to the main box as before, even past the front wall", () => {
+  const win = boot();
+  const t = win.state.trailers[0]; // 53 ft dry van: no cab-over
+  eq(t.cabOver, null, "no cubbie on this preset");
+
+  win.document.getElementById("L").value = "10"; win.document.getElementById("W").value = "10"; win.document.getElementById("H").value = "10";
+  win.addPalletFromForm();
+  const p = t.pallets[0];
+  p.position.set(-50, 20, t.dims.w / 2);
+  win.clampToTrailer(p);
+  eq(p.position.x, 5, "clamped back inside the main box, unaffected by the cubbie logic");
 });
 
 test("locking a cargo item excludes it from dragging, rotating and deleting until unlocked", () => {
