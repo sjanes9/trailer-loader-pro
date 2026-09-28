@@ -157,6 +157,9 @@
       <option value="double" selected>Double swing doors</option>
     </select>
     <label style="display:inline-flex; align-items:center; gap:6px; text-transform:none; font-weight:normal; margin:2px 0 8px">
+      <input type="checkbox" id="tDoorOpen" style="width:auto; margin:0"> Doors open
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:6px; text-transform:none; font-weight:normal; margin:2px 0 8px">
       <input type="checkbox" id="tShowTruck" checked style="width:auto; margin:0"> Show truck cab
     </label>
     <p class="hint">Preset dimensions are nominal starting points only. Confirm against the actual trailer or container before committing a load plan.</p>
@@ -326,20 +329,27 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.13.2";
+var APP_VERSION = "2.14.0";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
 var UPDATE_CHECK_MS = 5 * 60 * 1000;
 
 /* Nominal interior dimensions in inches. Starting points, not spec values. */
-/* Box truck interior dims/payload are sourced from Penske's and U-Haul's own
-   published specs (pensketruckrental.com and uhaul.com, checked 2026-09-14).
-   Like every preset here, they're nominal starting points -- the app's
-   existing hint already says to confirm against the actual vehicle. */
+/* Box truck interior dims and payload are sourced from Penske's and
+   U-Haul's own published specs (pensketruckrental.com and uhaul.com,
+   re-checked 2026-09-28 against every size listed there -- all match
+   exactly). The semi-trailer/container/flatbed group isn't one carrier's
+   spec sheet, so it's cross-checked against several trailer-manufacturer
+   and container references instead (also 2026-09-28); a 53 ft trailer's
+   *interior* length is reported anywhere from about 630 to 636 in
+   depending on make, so that group uses 630 in (52'6"), nearer the middle
+   of that range, rather than the full nominal 53 ft. Like every preset
+   here, they're nominal starting points -- the app's existing hint already
+   says to confirm against the actual vehicle. */
 var PRESETS = [
-  { id: "van53",  name: "53 ft dry van",   l: 636, w: 102, h: 110, group: "Semi trailers & containers" },
-  { id: "van48",  name: "48 ft dry van",   l: 576, w: 102, h: 110, group: "Semi trailers & containers" },
+  { id: "van53",  name: "53 ft dry van",   l: 630, w: 102, h: 110, group: "Semi trailers & containers" },
+  { id: "van48",  name: "48 ft dry van",   l: 570, w: 102, h: 110, group: "Semi trailers & containers" },
   { id: "cont40", name: "40 ft container", l: 474, w: 92,  h: 94,  group: "Semi trailers & containers" },
   { id: "cont20", name: "20 ft container", l: 232, w: 92,  h: 94,  group: "Semi trailers & containers" },
   { id: "flat48", name: "48 ft flatbed",   l: 576, w: 102, h: 102, group: "Semi trailers & containers" },
@@ -618,7 +628,7 @@ function buildTrailerMeshes(t) {
   t.cabOverMeshes = t.cabOver ? buildCabOverMesh(t.cabOver, t.dims.w) : [];
   t.cabOverMeshes.forEach(function (m) { m.visible = false; scene.add(m); });
 
-  t.doorMeshes = buildDoorMeshes(t.doorType, t.dims);
+  t.doorMeshes = buildDoorMeshes(t.doorType, t.dims, t.doorOpen);
   t.doorMeshes.forEach(function (m) { m.visible = false; scene.add(m); });
 }
 
@@ -719,15 +729,27 @@ function buildCabOverMesh(c, trailerW) {
    case), "single" (one swing door hinged at the left wall), "roll" (a
    corrugated roll-up/pull-down shutter) or "none". Purely cosmetic, at the
    rear (x = dims.l) -- clamping and stats only ever use t.dims. */
-function buildDoorMeshes(type, dims) {
+/* `open` swings swing-type doors clear of the doorway and, for a roll-up
+   door, retracts it to a coil just inside the ceiling -- real headroom
+   cargo can't use, so it's modeled inside the box, not off to the side, to
+   be accounted for when placing tall cargo near the rear. */
+function buildDoorMeshes(type, dims, open) {
   if (!type || type === "none") return [];
   var x = dims.l + 0.3, depth = 2;
   var panelMat = new THREE.MeshPhongMaterial({ color: 0xbfc6cc });
   var seamMat = new THREE.MeshPhongMaterial({ color: 0x2b2b2e });
+  var OPEN_ANGLE = 100 * Math.PI / 180;
 
-  function panel(w, cz) {
+  /* One hinged panel, width w, hinged at z = hingeZ. sign=+1 for a hinge on
+     the left wall (the panel extends toward +z when closed); sign=-1 for a
+     hinge on the right wall (extends toward -z). Swinging it open rotates
+     it about that hinge toward -x -- out from behind the trailer and clear
+     of the doorway, the way a real barn/swing door opens. */
+  function panel(w, hingeZ, sign) {
+    var theta = open ? OPEN_ANGLE : 0;
     var m = new THREE.Mesh(new THREE.BoxGeometry(depth, dims.h, w), panelMat);
-    m.position.set(x, dims.h / 2, cz);
+    m.position.set(x - (w / 2) * Math.sin(theta), dims.h / 2, hingeZ + sign * (w / 2) * Math.cos(theta));
+    m.rotation.y = sign > 0 ? -theta : Math.PI + theta;
     return m;
   }
   function bar(w, cz) {
@@ -738,17 +760,32 @@ function buildDoorMeshes(type, dims) {
 
   if (type === "double") {
     var half = dims.w / 2;
-    return [panel(half - 1.5, half / 2), panel(half - 1.5, half + half / 2), bar(3, half)];
+    var doubleMeshes = [panel(half - 1.5, 0, 1), panel(half - 1.5, dims.w, -1)];
+    if (!open) doubleMeshes.push(bar(3, half)); // the two closed doors meeting -- nothing to mark once they've swung apart
+    return doubleMeshes;
   }
   if (type === "single") {
-    return [panel(dims.w - 3, dims.w / 2), bar(3, 1.5)];
+    var singleMeshes = [panel(dims.w - 3, 0, 1)];
+    if (!open) singleMeshes.push(bar(3, 1.5)); // hinge marker, only meaningful while closed
+    return singleMeshes;
   }
   if (type === "roll") {
+    if (open) return [buildRolledDoorMesh(dims)];
     var roll = new THREE.Mesh(new THREE.BoxGeometry(depth, dims.h, dims.w - 3), makeRollDoorMaterial());
     roll.position.set(x, dims.h / 2, dims.w / 2);
     return [roll];
   }
   return [];
+}
+
+function buildRolledDoorMesh(dims) {
+  var rollDepth = 10, rollThickness = 8;
+  var m = new THREE.Mesh(
+    new THREE.BoxGeometry(rollDepth, rollThickness, dims.w - 3),
+    makeRollDoorMaterial()
+  );
+  m.position.set(dims.l - rollDepth / 2, dims.h - rollThickness / 2, dims.w / 2);
+  return m;
 }
 
 function makeRollDoorMaterial() {
@@ -816,6 +853,7 @@ function addNewTrailer(opts) {
     dims: opts.dims || { l: preset.l, w: preset.w, h: preset.h },
     maxWeight: num(opts.maxWeight, 45000),
     doorType: opts.doorType || "double",
+    doorOpen: !!opts.doorOpen,
     showTruck: opts.showTruck !== false,
     pallets: [],
     fixtures: [],
@@ -896,6 +934,7 @@ function fillTrailerForm(t) {
   $("tH").value = round2(t.dims.h / IN_PER_FT);
   $("tMaxWeight").value = t.maxWeight;
   $("tDoor").value = t.doorType || "double";
+  $("tDoorOpen").checked = !!t.doorOpen;
   $("tShowTruck").checked = t.showTruck !== false;
   var match = matchingPreset(t.dims);
   $("trailerPreset").value = match ? match.id : "custom";
@@ -918,6 +957,7 @@ function applyTrailerSettings() {
   t.dims = { l: l, w: w, h: h };
   t.maxWeight = num($("tMaxWeight").value, 0);
   t.doorType = $("tDoor").value;
+  t.doorOpen = $("tDoorOpen").checked;
   t.showTruck = $("tShowTruck").checked;
 
   buildTrailerMeshes(t);
@@ -2395,6 +2435,7 @@ function serialize() {
         dims: t.dims,
         maxWeight: t.maxWeight,
         doorType: t.doorType,
+        doorOpen: t.doorOpen,
         showTruck: t.showTruck,
         pallets: t.pallets.map(function (p) {
           var d = p.userData;
@@ -2438,7 +2479,7 @@ function migrate(raw) {
       trailers: raw.t.map(function (t, i) {
         return {
           name: "Trailer " + (i + 1),
-          dims: t.d || { l: 636, w: 102, h: 110 },
+          dims: t.d || { l: 630, w: 102, h: 110 },
           maxWeight: 45000,
           pallets: (t.p || [])
         };
@@ -2471,12 +2512,13 @@ function loadProject(e) {
       var t = addNewTrailer({
         name: td.name,
         dims: {
-          l: num(td.dims && td.dims.l, 636),
+          l: num(td.dims && td.dims.l, 630),
           w: num(td.dims && td.dims.w, 102),
           h: num(td.dims && td.dims.h, 110)
         },
         maxWeight: num(td.maxWeight, 45000),
         doorType: td.doorType,
+        doorOpen: td.doorOpen,
         showTruck: td.showTruck
       });
       (td.pallets || []).forEach(function (pd) {

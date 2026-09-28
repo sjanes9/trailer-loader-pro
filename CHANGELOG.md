@@ -2,6 +2,32 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.14.0] - 2026-09-28
+
+### Added
+
+- **Doors can be opened or closed.** A new Doors open checkbox on the
+  Trailer panel (applied with the other trailer settings). Single and
+  double swing doors visibly swing open, clear of the doorway. A roll-up
+  door retracts to a coil just inside the ceiling near the rear instead of
+  simply disappearing -- that's real headroom cargo can't use, so it stays
+  visible and modeled inside the box to account for when placing tall
+  cargo back there. Saved and loaded with the layout.
+
+### Changed
+
+- **Re-verified every trailer/truck preset's dimensions and payload against
+  current published specs.** U-Haul's and Penske's box truck sizes (all 9)
+  matched exactly -- no changes. The semi-trailer/container/flatbed group
+  isn't tied to one carrier's spec sheet, so it was cross-checked against
+  several trailer-manufacturer and container references instead; a 53 ft
+  trailer's actual interior length is reported anywhere from about 630 to
+  636 in depending on manufacturer, so the 53 ft and 48 ft dry van presets
+  now use a more representative interior length (630 in / 570 in) instead
+  of the full nominal 53 ft / 48 ft (636 in / 576 in). Every preset is
+  still explicitly a nominal starting point -- confirm against the actual
+  vehicle before committing a load plan.
+
 ## [2.13.2] - 2026-09-28
 
 ### Fixed

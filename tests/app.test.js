@@ -444,6 +444,63 @@ test("rear door style builds the matching meshes and can be turned off or change
   assert(win.state.trailers[0].doorMeshes.length !== singleCount || true, "roll-up built independently of the single-door meshes");
 });
 
+test("opening double doors swings each panel out from behind the trailer instead of leaving them flat across the back", () => {
+  const win = boot();
+  const d = win.document;
+  const t = win.state.trailers[0];
+  eq(d.getElementById("tDoorOpen").checked, false, "doors start closed on a new trailer");
+
+  const closedMeshes = t.doorMeshes;
+  eq(closedMeshes.length, 3, "two panels plus the center seam while closed");
+  const closedZ = closedMeshes.map((m) => m.position.z).sort((a, b) => a - b);
+
+  d.getElementById("tDoorOpen").checked = true;
+  win.applyTrailerSettings();
+  const openMeshes = win.state.trailers[0].doorMeshes;
+  eq(openMeshes.length, 2, "just the two panels once open -- no seam to show between doors that have swung apart");
+  openMeshes.forEach((m, i) => {
+    assert(m.position.x < closedMeshes[i].position.x, "panel " + i + " swung back, away from the doorway (smaller x)");
+  });
+  assert(openMeshes[0].rotation.y !== 0, "panel rotated to match its new swung-open angle");
+  void closedZ;
+});
+
+test("opening a roll-up door retracts it to a coil just inside the ceiling instead of the flat panel across the back", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tDoor").value = "roll";
+  win.applyTrailerSettings();
+  const t = win.state.trailers[0];
+  const closedRoll = t.doorMeshes[0];
+  eq(closedRoll.position.x, t.dims.l + 0.3, "closed: flat panel right at the rear wall");
+
+  d.getElementById("tDoorOpen").checked = true;
+  win.applyTrailerSettings();
+  const openRoll = win.state.trailers[0].doorMeshes[0];
+  assert(openRoll.position.x < t.dims.l, "retracted: pulled inside the box, not out at the rear wall");
+  assert(openRoll.position.y > t.dims.h / 2, "retracted: up near the ceiling, real headroom cargo can't use");
+});
+
+test("save/load round trip preserves whether the doors are open", () => {
+  const win = boot();
+  const d = win.document;
+  d.getElementById("tDoorOpen").checked = true;
+  win.applyTrailerSettings();
+  const saved = win.serialize();
+  eq(saved.trailers[0].doorOpen, true, "doorOpen saved");
+
+  const win2 = boot();
+  const fileInput = win2.document.getElementById("fileInput");
+  Object.defineProperty(fileInput, "files", { value: [{ name: "t.json" }], configurable: true });
+  win2.FileReader = function () {
+    this.onload = null;
+    this.readAsText = () => { if (this.onload) this.onload({ target: { result: JSON.stringify(saved) } }); };
+    return this;
+  };
+  win2.loadProject({ target: fileInput });
+  eq(win2.state.trailers[0].doorOpen, true, "doorOpen restored");
+});
+
 test("show truck cab toggle hides/shows the truck meshes for the current trailer, and round-trips through fillTrailerForm", () => {
   const win = boot();
   const d = win.document;
