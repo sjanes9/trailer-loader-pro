@@ -55,6 +55,7 @@ const THREE_STUB = `
     DirectionalLight: function(){ return new Obj3D(); },
     PlaneGeometry: function(w,h){ return geom({width:w,height:h}); },
     BoxGeometry: function(w,h,d){ return geom({width:w,height:h,depth:d}); },
+    CylinderGeometry: function(rt,rb,h,seg){ return geom({radiusTop:rt,radiusBottom:rb,height:h,radialSegments:seg}); },
     EdgesGeometry: function(){ return geom({}); },
     LineBasicMaterial: function(o){ return { opts:o, dispose:function(){} }; },
     MeshPhongMaterial: function(o){ o=o||{}; return { map:o.map||null, opts:o, dispose:function(){} }; },
@@ -477,8 +478,10 @@ test("opening a roll-up door retracts it to a coil just inside the ceiling inste
   d.getElementById("tDoorOpen").checked = true;
   win.applyTrailerSettings();
   const openRoll = win.state.trailers[0].doorMeshes[0];
-  assert(openRoll.position.x < t.dims.l, "retracted: pulled inside the box, not out at the rear wall");
-  assert(openRoll.position.y > t.dims.h / 2, "retracted: up near the ceiling, real headroom cargo can't use");
+  const radius = openRoll.geometry.parameters.radiusTop;
+  assert(radius > 0, "retracted door is a cylindrical coil, not a flat plate");
+  eq(openRoll.position.y + radius, t.dims.h, "flush against the ceiling (no gap below it)");
+  eq(openRoll.position.x + radius, t.dims.l, "flush against the doorway/rear wall (not floating deeper inside the box)");
 });
 
 test("save/load round trip preserves whether the doors are open", () => {

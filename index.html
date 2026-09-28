@@ -329,7 +329,7 @@
  * Single-file, vanilla JS, no build step. See CHANGELOG.md.
  * ------------------------------------------------------------------ */
 
-var APP_VERSION = "2.15.0";
+var APP_VERSION = "2.15.1";
 var SAVE_FORMAT = "trailer-loader-pro";
 var SAVE_VERSION = 3;
 var IN_PER_FT = 12;
@@ -790,14 +790,34 @@ function buildDoorMeshes(type, dims, open) {
   return [];
 }
 
+/* A real roll-up door retracts to a cylindrical coil sitting right at the
+   header -- flush against the ceiling and the doorway, barely poking into
+   the box -- not a flat plate hovering below it. */
 function buildRolledDoorMesh(dims) {
-  var rollDepth = 10, rollThickness = 8;
+  var radius = 6;
   var m = new THREE.Mesh(
-    new THREE.BoxGeometry(rollDepth, rollThickness, dims.w - 3),
-    makeRollDoorMaterial()
+    new THREE.CylinderGeometry(radius, radius, dims.w - 3, 16),
+    makeRolledCoilMaterial()
   );
-  m.position.set(dims.l - rollDepth / 2, dims.h - rollThickness / 2, dims.w / 2);
+  m.rotation.x = Math.PI / 2; // cylinder's axis (normally Y) now runs along Z, across the doorway
+  m.position.set(dims.l - radius, dims.h - radius, dims.w / 2);
   return m;
+}
+
+/* Vertical stripes here wrap around the coil's circumference once mapped
+   onto the cylinder, showing as the corrugated shutter's ridge bands when
+   viewed from below -- unlike makeRollDoorMaterial()'s horizontal stripes,
+   which are for the flat closed-door panel viewed head-on. */
+function makeRolledCoilMaterial() {
+  var canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 32;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#c7ccd1"; ctx.fillRect(0, 0, 256, 32);
+  for (var x = 0; x < 256; x += 16) {
+    ctx.fillStyle = "#9aa1a8";
+    ctx.fillRect(x, 0, 7, 32);
+  }
+  return new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) });
 }
 
 function makeRollDoorMaterial() {
