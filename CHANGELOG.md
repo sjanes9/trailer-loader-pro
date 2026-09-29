@@ -2,6 +2,16 @@
 
 All notable changes to Trailer Loader Pro. Versioning follows semantic versioning.
 
+## [2.15.2] - 2026-09-28
+
+### Changed
+
+- **Reworked the open roll-up door's look again**, per feedback that the
+  coiled-cylinder version (2.15.1) didn't read well. It's now a flat panel
+  folded back flush against the ceiling, straight back from the doorway
+  header -- like a garage door's panels once they've tracked up and back --
+  instead of a rolled-up coil.
+
 ## [2.15.1] - 2026-09-28
 
 ### Fixed

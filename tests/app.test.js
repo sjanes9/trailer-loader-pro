@@ -55,7 +55,6 @@ const THREE_STUB = `
     DirectionalLight: function(){ return new Obj3D(); },
     PlaneGeometry: function(w,h){ return geom({width:w,height:h}); },
     BoxGeometry: function(w,h,d){ return geom({width:w,height:h,depth:d}); },
-    CylinderGeometry: function(rt,rb,h,seg){ return geom({radiusTop:rt,radiusBottom:rb,height:h,radialSegments:seg}); },
     EdgesGeometry: function(){ return geom({}); },
     LineBasicMaterial: function(o){ return { opts:o, dispose:function(){} }; },
     MeshPhongMaterial: function(o){ o=o||{}; return { map:o.map||null, opts:o, dispose:function(){} }; },
@@ -466,7 +465,7 @@ test("opening double doors swings each panel out from behind the trailer instead
   void closedZ;
 });
 
-test("opening a roll-up door retracts it to a coil just inside the ceiling instead of the flat panel across the back", () => {
+test("opening a roll-up door folds it back flat against the ceiling, like a garage door's panels once they've tracked up and back -- not the flat panel across the back", () => {
   const win = boot();
   const d = win.document;
   d.getElementById("tDoor").value = "roll";
@@ -478,10 +477,11 @@ test("opening a roll-up door retracts it to a coil just inside the ceiling inste
   d.getElementById("tDoorOpen").checked = true;
   win.applyTrailerSettings();
   const openRoll = win.state.trailers[0].doorMeshes[0];
-  const radius = openRoll.geometry.parameters.radiusTop;
-  assert(radius > 0, "retracted door is a cylindrical coil, not a flat plate");
-  eq(openRoll.position.y + radius, t.dims.h, "flush against the ceiling (no gap below it)");
-  eq(openRoll.position.x + radius, t.dims.l, "flush against the doorway/rear wall (not floating deeper inside the box)");
+  const trackDepth = openRoll.geometry.parameters.width;
+  const trackThickness = openRoll.geometry.parameters.height;
+  assert(trackDepth > 0 && trackDepth < t.dims.h, "a reasonable track length, not absurdly long");
+  eq(openRoll.position.y + trackThickness / 2, t.dims.h, "flush against the ceiling (no gap below it)");
+  eq(openRoll.position.x + trackDepth / 2, t.dims.l, "folded straight back from the doorway header, not floating somewhere else");
 });
 
 test("save/load round trip preserves whether the doors are open", () => {
